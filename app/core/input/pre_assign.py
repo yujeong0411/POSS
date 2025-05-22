@@ -1,5 +1,6 @@
 import fnmatch
 import pulp
+from pulp import PULP_CBC_CMD
 
 from typing import Tuple, List
 
@@ -313,7 +314,7 @@ def check_capacity_violations(
         )
 
     # 최적화를 실행합니다.
-    prob.solve()
+    prob.solve(PULP_CBC_CMD(msg=True))
 
     # 슬랙이 발생한 요청에 대해, 해당 요청의 모든 조합별로 SlackQty를 기록합니다.
     records = []
@@ -378,7 +379,7 @@ def check_max_line_violations(
         )
 
     # 최적화를 실행합니다.
-    prob.solve()
+    prob.solve(PULP_CBC_CMD(msg=True))
 
     # 슬랙이 발생한 (그룹,교대)별로 SlackCount를 기록합니다.
     records = []
@@ -445,7 +446,7 @@ def check_max_qty_violations(
         )
 
     # 최적화를 실행합니다.
-    prob.solve()
+    prob.solve(PULP_CBC_CMD(msg=True))
 
     # 슬랙이 발생한 (그룹,교대)별로 SlackQty를 기록합니다.
     records = []
@@ -579,7 +580,7 @@ def check_all_violations(
         )
 
     # 최적화 실행
-    prob.solve()
+    prob.solve(PULP_CBC_CMD(msg=True))
 
     # 발생한 슬랙을 모두 모아 테이블로 반환
     records = []

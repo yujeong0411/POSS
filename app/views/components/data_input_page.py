@@ -320,7 +320,9 @@ class DataInputPage(QWidget) :
     """
     파일이 삭제되면 사이드바에서도 제거하고 관련된 모든 탭 닫기
     """
-    def on_file_removed(self, file_path) :
+
+    def on_file_removed(self, file_path):
+        """파일이 제거되면 사이드바에서도 제거하고 관련된 모든 탭 닫기"""
         result = self.sidebar_manager.remove_file_from_sidebar(file_path)
 
         self.tab_manager.close_file_tabs(file_path)
@@ -328,11 +330,35 @@ class DataInputPage(QWidget) :
         file_name = os.path.basename(file_path)
         self.update_status_message(True, f"파일 '{file_name}'이(가) 제거되었습니다")
 
-        try:
-            solution, failures = run_allocation()
-            self.parameter_component.show_failures.emit(solution, failures)
-        except Exception as e:
-            print(f"[preAssign 자동분석] 오류 발생: {e}")
+        # Parameter 영역 완전 정리
+        self._clear_parameter_areas()
+
+        # 필수 파일이 모두 있는지 확인 후 분석 재실행
+        demand_file = FilePaths.get("demand_excel_file")
+        dynamic_file = FilePaths.get("dynamic_excel_file")
+        master_file = FilePaths.get("master_excel_file")
+
+        if all([demand_file, dynamic_file, master_file]):
+            try:
+                self.run_combined_analysis()
+            except Exception as e:
+                print(f"[분석 재실행] 오류 발생: {e}")
+
+    def _clear_parameter_areas(self):
+        """파라미터 영역 데이터 정리"""
+        # 좌측 파라미터 영역 정리
+        self.left_parameter_component.all_project_analysis_data.clear()
+        self.left_parameter_component._initialize_all_tabs()
+
+        # 우측 파라미터 영역 정리
+        empty_failures = {
+            'production_capacity': None,
+            'materials': None,
+            'current_shipment': None,
+            'preassign': None,
+            'plan_retention': None
+        }
+        self.parameter_component.show_failures.emit(empty_failures)
 
     """
     Run 버튼 클릭 시 모든 데이터프레임 DataStore에 저장

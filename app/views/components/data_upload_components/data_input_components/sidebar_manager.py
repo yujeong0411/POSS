@@ -90,18 +90,11 @@ class SidebarManager:
         if file_path in self.parent.data_modifier.modified_data_dict:
             del self.parent.data_modifier.modified_data_dict[file_path]
 
-        # DataStore에서도 관련 데이터프레임 제거
-        from app.models.common.file_store import DataStore
-        df_dict = DataStore.get("dataframes", {})
-        keys_to_remove = []
-        for key in df_dict.keys():
-            if key == file_path or key.startswith(f"{file_path}:"):
-                keys_to_remove.append(key)
+        # DataStore에서 해당 파일 관련 데이터만 제거
+        self._clear_file_related_datastore(file_path)
 
-        for key in keys_to_remove:
-            del df_dict[key]
-
-        DataStore.set("dataframes", df_dict)
+        # FilePaths에서 해당 경로 제거
+        self._clear_file_paths(file_path)
 
         # 현재 표시 중인 파일이 제거된 경우, 화면 초기화
         if self.parent.current_file == file_path:
@@ -109,6 +102,53 @@ class SidebarManager:
             self.parent.current_sheet = None
 
         return result
+
+    def _clear_file_related_datastore(self, file_path):
+        """파일과 관련된 DataStore 데이터 정리"""
+        from app.models.common.file_store import DataStore
+
+        # 1. dataframes 정리
+        df_dict = DataStore.get("dataframes", {})
+        keys_to_remove = [key for key in df_dict.keys()
+                          if key == file_path or key.startswith(f"{file_path}:")]
+        for key in keys_to_remove:
+            del df_dict[key]
+        DataStore.set("dataframes", df_dict)
+
+        # 2. original_dataframes 정리
+        original_df_dict = DataStore.get('original_dataframes', {})
+        keys_to_remove = [key for key in original_df_dict.keys()
+                          if key == file_path or key.startswith(f"{file_path}:")]
+        for key in keys_to_remove:
+            del original_df_dict[key]
+        DataStore.set('original_dataframes', original_df_dict)
+
+        # 3. 파일 타입별 처리
+        file_name = os.path.basename(file_path).lower()
+
+        # 핵심 파일이 삭제된 경우 관련 분석 데이터 모두 정리
+        if any(keyword in file_name for keyword in ['demand', 'dynamic', 'master']):
+            DataStore.delete('organized_dataframes')
+            DataStore.delete('optimization_result')
+
+        # dynamic 파일이 삭제된 경우 maintenance 관련 데이터 정리
+        if 'dynamic' in file_name:
+            DataStore.delete('maintenance_thresholds_items')
+            DataStore.delete('maintenance_thresholds_rmcs')
+
+    def _clear_file_paths(self, file_path):
+        """FilePaths에서 해당 파일 경로 제거"""
+        from app.models.common.file_store import FilePaths
+
+        # 현재 등록된 경로들 확인하고 일치하는 것 제거
+        path_keys = [
+            "demand_excel_file", "dynamic_excel_file", "master_excel_file",
+            "pre_assign_excel_file", "etc_excel_file", "result_file"
+        ]
+
+        for key in path_keys:
+            if FilePaths.get(key) == file_path:
+                FilePaths.set(key, None)
 
     def on_file_or_sheet_selected(self, file_path, sheet_name):
         """

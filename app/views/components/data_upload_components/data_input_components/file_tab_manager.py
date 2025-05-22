@@ -73,32 +73,16 @@ class FileTabManager:
         self.stacked_widget.setContentsMargins(0, 0, 0, 0)
 
     def create_new_tab(self, file_path, sheet_name):
-        """새 탭 생성"""
+        """새 탭 생성 - 항상 원본 파일에서 로드"""
         try:
-            file_info = self.parent.loaded_files[file_path]
+            # 🔥 항상 원본 파일에서 로드 (우선순위 체크 제거)
+            if sheet_name:
+                df = DataTableComponent.load_data_from_file(file_path, sheet_name=sheet_name)
+            else:
+                df = DataTableComponent.load_data_from_file(file_path)
 
-            # 수정된 데이터 우선 확인
-            df = None
-            if file_path in self.parent.data_modifier.modified_data_dict:
-                sheet_key = sheet_name or 'data'
-                if sheet_key in self.parent.data_modifier.modified_data_dict[file_path]:
-                    df = self.parent.data_modifier.modified_data_dict[file_path][sheet_key]
-                    print(f"수정된 데이터 로드됨: {file_path}, 시트: {sheet_name}")
-
-            # 수정된 데이터가 없으면 원본 데이터 로드
-            if df is None:
-                if sheet_name and file_info['sheets'] and sheet_name in file_info['sheets']:
-                    # 시트가 명시적으로 선택된 경우
-                    df = DataTableComponent.load_data_from_file(file_path, sheet_name=sheet_name)
-                    file_info['df'] = df  # 현재 로드된 데이터프레임 업데이트
-                    file_info['current_sheet'] = sheet_name
-                else:
-                    # CSV 파일이거나 시트가 없는 경우
-                    df = file_info['df']
-
-            # 탭 제목 설정 - 여기서 수정
+            # 탭 제목 설정
             file_name = os.path.basename(file_path)
-            # 확장자 제거
             file_name_without_ext = os.path.splitext(file_name)[0]
 
             if sheet_name:
@@ -106,10 +90,9 @@ class FileTabManager:
             else:
                 tab_title = file_name_without_ext
 
-            # 수정된 파일인 경우 표시
+            # 수정된 파일인지 확인하여 표시
             if (file_path in self.parent.data_modifier.modified_data_dict and
-                    (sheet_name in self.parent.data_modifier.modified_data_dict[file_path] or
-                     'data' in self.parent.data_modifier.modified_data_dict[file_path])):
+                    (sheet_name or 'data') in self.parent.data_modifier.modified_data_dict[file_path]):
                 tab_title += " *"
 
             # 새 탭용 위젯 생성
@@ -138,17 +121,16 @@ class FileTabManager:
             self.open_tabs[(file_path, sheet_name)] = tab_index
             self.tab_bar.setCurrentIndex(tab_index)  # 새 탭으로 전환
 
-            # DataStore에 데이터 저장
+            # DataStore에 저장
             from app.models.common.file_store import DataStore
             df_dict = DataStore.get("dataframes", {})
             key = f"{file_path}:{sheet_name}" if sheet_name else file_path
             df_dict[key] = df
             DataStore.set("dataframes", df_dict)
 
+            # original_dataframes에 원본 데이터 저장 (비교용)
             original_df_dict = DataStore.get('original_dataframes', {})
-
             if key not in original_df_dict:
-                # 인덱스와 컬럼을 명시적으로 복사하여 저장
                 try:
                     # 깊은 복사 수행
                     original_df = pd.DataFrame(df.values.copy(),

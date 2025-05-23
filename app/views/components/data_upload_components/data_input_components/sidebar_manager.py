@@ -4,20 +4,18 @@ from PyQt5.QtCore import Qt
 
 from app.views.components.data_upload_components.data_table_component import DataTableComponent
 
-
+"""
+사이드바 관리를 위한 클래스
+파일 탐색기 사이드바와 파일 데이터 로딩 담당
+"""
 class SidebarManager:
-    """
-    사이드바 관리를 위한 클래스
-    파일 탐색기 사이드바와 파일 데이터 로딩 담당
-    """
-
     def __init__(self, parent):
         self.parent = parent
         self.file_explorer = parent.file_explorer
         self.updating_from_sidebar = False
 
+    """파일을 사이드바에 추가하고 DataStore에 등록"""
     def add_file_to_sidebar(self, file_path):
-        """파일을 사이드바에 추가하고 DataStore에 등록"""
         # 파일 확장자 확인
         file_ext = os.path.splitext(file_path)[1].lower()
 
@@ -77,8 +75,8 @@ class SidebarManager:
         except Exception as e:
             return False, f"파일 로드 오류: {str(e)}"
 
+    """사이드바에서 파일 제거 및 관련 데이터 정리"""
     def remove_file_from_sidebar(self, file_path):
-        """사이드바에서 파일 제거 및 관련 데이터 정리"""
         # 사이드바에서 파일 제거
         result = self.file_explorer.remove_file(file_path)
 
@@ -103,8 +101,8 @@ class SidebarManager:
 
         return result
 
+    """파일과 관련된 DataStore 데이터 정리"""
     def _clear_file_related_datastore(self, file_path):
-        """파일과 관련된 DataStore 데이터 정리"""
         from app.models.common.file_store import DataStore
 
         # 1. dataframes 정리
@@ -136,8 +134,8 @@ class SidebarManager:
             DataStore.delete('maintenance_thresholds_items')
             DataStore.delete('maintenance_thresholds_rmcs')
 
+    """FilePaths에서 해당 파일 경로 제거"""
     def _clear_file_paths(self, file_path):
-        """FilePaths에서 해당 파일 경로 제거"""
         from app.models.common.file_store import FilePaths
 
         # 현재 등록된 경로들 확인하고 일치하는 것 제거
@@ -150,13 +148,11 @@ class SidebarManager:
             if FilePaths.get(key) == file_path:
                 FilePaths.set(key, None)
 
+    """
+    파일 탐색기에서 파일이나 시트 선택 처리
+    선택된 항목을 탭으로 표시하거나 기존 탭 활성화
+    """
     def on_file_or_sheet_selected(self, file_path, sheet_name):
-        """
-        파일 탐색기에서 파일이나 시트 선택 처리
-        선택된 항목을 탭으로 표시하거나 기존 탭 활성화
-        """
-        print(f"사이드바에서 선택됨: {file_path}, 시트: {sheet_name}")
-
         # 탭으로부터의 업데이트 중이면 무시 (무한 루프 방지)
         if self.parent.tab_manager.updating_from_tab:
             return
@@ -165,7 +161,6 @@ class SidebarManager:
 
         # 파일이 로드되지 않은 경우
         if file_path not in self.parent.loaded_files:
-            print("선택한 파일이 로드되지 않았습니다")
             self.updating_from_sidebar = False
             return
 

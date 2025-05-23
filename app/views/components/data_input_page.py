@@ -320,9 +320,7 @@ class DataInputPage(QWidget) :
     """
     파일이 삭제되면 사이드바에서도 제거하고 관련된 모든 탭 닫기
     """
-
     def on_file_removed(self, file_path):
-        """파일이 제거되면 사이드바에서도 제거하고 관련된 모든 탭 닫기"""
         result = self.sidebar_manager.remove_file_from_sidebar(file_path)
 
         self.tab_manager.close_file_tabs(file_path)
@@ -344,8 +342,8 @@ class DataInputPage(QWidget) :
             except Exception as e:
                 print(f"[분석 재실행] 오류 발생: {e}")
 
+    """파라미터 영역 데이터 정리"""
     def _clear_parameter_areas(self):
-        """파라미터 영역 데이터 정리"""
         # 좌측 파라미터 영역 정리
         self.left_parameter_component.all_project_analysis_data.clear()
         self.left_parameter_component._initialize_all_tabs()
@@ -363,7 +361,6 @@ class DataInputPage(QWidget) :
     """
     Run 버튼 클릭 시 모든 데이터프레임 DataStore에 저장
     """
-
     def on_run_clicked(self):
         # 필수 파일 확인
         demand_file = FilePaths.get("demand_excel_file")
@@ -408,7 +405,6 @@ class DataInputPage(QWidget) :
     """
 
     def show_optimization_progress(self):
-        """최적화 프로그래스 다이얼로그 표시"""
         # 프로그래스 다이얼로그 생성 (DataInputPage 객체 전달)
         self.progress_dialog = OptimizationProgressDialog(self, self)
 
@@ -425,8 +421,8 @@ class DataInputPage(QWidget) :
         # UI가 업데이트될 시간을 주기 위해 약간의 지연 후 최적화 시작
         QTimer.singleShot(300, self.progress_dialog.start_optimization)
 
+    """최적화 완료 처리"""
     def on_optimization_completed(self, result):
-        """최적화 완료 처리"""
         if result:
             # 결과 데이터스토어에 저장
             DataStore.set("optimization_result", result)

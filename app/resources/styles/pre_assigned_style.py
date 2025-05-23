@@ -11,9 +11,6 @@ QPushButton {{
     color: white; 
     border: none;
     border-radius: 5px;
-    padding: {h(8)}px {w(16)}px;
-    min-width: {w(60)}px;
-    min-height: {h(10)}px;
     font-family: {button_font};
     font-size: {f(16)}px;
 }}
@@ -30,9 +27,6 @@ QPushButton {{
     background-color: #ACACAC;
     color: white;
     border-radius: 5px;
-    padding: {h(8)}px {w(16)}px;
-    min-width: {w(60)}px;
-    min-height: {h(10)}px;
     font-family: {button_font};
     font-size: {f(16)}px;
 }}

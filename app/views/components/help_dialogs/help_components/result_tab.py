@@ -61,7 +61,7 @@ class ResultTabComponent(BaseTabComponent):
             number=1,
             title="View Planning Results",
             description="The results are displayed in a calendar format.",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/result_calendar.png"
         )
 
         # 팁 섹션
@@ -69,65 +69,52 @@ class ResultTabComponent(BaseTabComponent):
             number=2,
             title="View Visualization Results",
             description="Here, you can see the quantified results of the output.",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/result_visual.png"
         )
 
         section3 = HelpSectionComponent(
             number=3,
             title="Drag & Drop",
             description="Here, you can drag and drop items to move them to your desired location.",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/result_drag.png"
         )
         section3.add_list_item("If the movement affects the plan, it will be reported in the error section.")
+        section3.add_list_item("If you hold the Control key while moving, the item will be copied with a quantity of zero.")
 
         section3_1 = HelpSectionComponent(
             number="3-1",
             title="Error Section",
             description="Here, it will notify you of the incorrect part, and if you click on the selected area, you will be taken to that issue",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/result_error.png"
         )
         section3_1.add_list_item("If corrected properly, this log will disappear.")
 
         section3_2 = HelpSectionComponent(
             number="3-2",
-            title="Item Copy",
-            description="If you hold the Control key while moving, the item will be copied with a quantity of zero.",
-            image_path="app/resources/help_images/select_date.png"
-        )
-
-        section3_3 = HelpSectionComponent(
-            number="3-3",
             title="Item Delete",
             description="If you right-click the mouse, you can delete the item.",
-            image_path="app/resources/help_images/select_date.png"
-        )
-
-        section3_4 = HelpSectionComponent(
-            number="3-4",
-            title="Change Visualization",
-            description="If you perform any of the actions above, the results in the area will update in real time.",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/result_delete.png"
         )
 
         section4 = HelpSectionComponent(
             number=4,
             title="Export Results",
             description="Clicking this button allows you to save the results as an Excel file.",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/result_export.png"
         )
 
         section5_1 = HelpSectionComponent(
             number="5-1",
             title="Item Filtering",
             description="Here, you can view the filtered results.",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/result_filter.png"
         )
 
         section5_2 = HelpSectionComponent(
             number="5-2",
             title="Item Search",
             description="If you search for the model name here, the corresponding item will be found.",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/result_search.png"
         )
 
         # 섹션 프레임에 모든 섹션
@@ -136,8 +123,6 @@ class ResultTabComponent(BaseTabComponent):
         sections_layout.addWidget(section3)
         sections_layout.addWidget(section3_1)
         sections_layout.addWidget(section3_2)
-        sections_layout.addWidget(section3_3)
-        sections_layout.addWidget(section3_4)
         sections_layout.addWidget(section4)
         sections_layout.addWidget(section5_1)
         sections_layout.addWidget(section5_2)

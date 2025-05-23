@@ -11,8 +11,6 @@ from .processThread import ProcessThread
 from app.models.common.screen_manager import *
 from app.resources.fonts.font_manager import font_manager
 
-bold_font   = font_manager.get_just_font("SamsungSharSans-Bold").family()
-normal_font = font_manager.get_just_font("SamsungOne-700").family()
 
 class ProjectGroupDialog(QDialog):
     # 최적화 완료 시 결과를 전달하기 위한 시그널
@@ -39,16 +37,19 @@ class ProjectGroupDialog(QDialog):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        bold_font = font_manager.get_just_font("SamsungSharSans-Bold").family()
+        normal_font = font_manager.get_just_font("SamsungOne-700").family()
+
         # 제목 영역
         title_frame = QFrame()
-        title_frame.setFixedHeight(60)
+        title_frame.setFixedHeight(h(55))
         title_frame.setStyleSheet("background-color: #1428A0; border: none;")
         title_layout = QVBoxLayout(title_frame)
         title_layout.setContentsMargins(20, 0, 20, 0)
         title_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         title_label = QLabel("Select Project Groups")
         title_label.setStyleSheet(
-            f"font-family:{bold_font}; font-size:{f(14)}px; font-weight:900; color:white;"
+            f"font-family:{bold_font}; font-size:{f(16)}px; font-weight:900; color:white;"
         )
         title_layout.addWidget(title_label)
         main_layout.addWidget(title_frame)
@@ -227,7 +228,7 @@ class ProjectGroupDialog(QDialog):
 
         main_layout.addWidget(button_frame)
 
-        self.setFixedWidth(1000)
+        self.setFixedWidth(w(700))
         self.adjustSize()
 
     """

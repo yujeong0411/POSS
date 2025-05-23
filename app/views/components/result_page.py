@@ -86,14 +86,6 @@ class ResultPage(QWidget):
         title_label.setStyleSheet(f"font-family: {bold_font}; font-size: {f(21)}px; font-weight: 900;")
         title_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
 
-        # Import 버튼 (새로 추가)
-        import_btn = QPushButton()
-        import_btn.setText("Import")
-        import_btn.setFixedSize(w(100), h(40))
-        import_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        import_btn.clicked.connect(self.load_result_file)  # 위에서 작성한 메서드 연결
-        import_btn.setStyleSheet(ResultStyles.EXPORT_BUTTON_STYLE)
-
         # Export 버튼
         export_btn = QPushButton("Export")
         export_btn.setCursor(QCursor(Qt.PointingHandCursor))
@@ -109,9 +101,8 @@ class ResultPage(QWidget):
 
         title_layout.addWidget(title_label)
         title_layout.addStretch(1)
-        title_layout.addWidget(import_btn)
         title_layout.addWidget(export_btn)
-        title_layout.addWidget(report_btn)
+        # title_layout.addWidget(report_btn)
 
         # 타이틀 프레임을 메인 레이아웃에 추가
         result_layout.addWidget(title_frame)

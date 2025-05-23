@@ -62,7 +62,7 @@ class PlanningTabComponent(BaseTabComponent):
             number=1,
             title="View Assignment Results",
             description="The results are displayed in a calendar format.",
-            image_path = "app/resources/help_images/select_date.png"
+            image_path = "app/resources/help_images/pre_calendar.png"
         )
 
         # 팁 섹션
@@ -70,35 +70,35 @@ class PlanningTabComponent(BaseTabComponent):
             number=2,
             title="View Summary Results",
             description="Here, you can see the quantified results of the output.",
-            image_path = "app/resources/help_images/select_date.png"
+            image_path = "app/resources/help_images/pre_summary.png"
         )
 
         section3 = HelpSectionComponent(
             number=3,
             title="Reset Results",
             description="This button resets the results when clicked.",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/pre_reset.png"
         )
 
         section4 = HelpSectionComponent(
             number=4,
             title="Export Results",
             description="Clicking this button allows you to save the results as an Excel file.",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/pre_export.png"
         )
 
         section5_1 = HelpSectionComponent(
             number="5-1",
             title="Run Second Optimization",
             description="By clicking this button, the secondary production scheduling algorithm will be executed.",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/pre_run.png"
         )
 
         section5_2 = HelpSectionComponent(
             number="5-2",
             title="Select Project",
             description="Here, you can select the projects to be reflected in the results.",
-            image_path="app/resources/help_images/select_date.png"
+            image_path="app/resources/help_images/pre_dialog.png"
         )
 
 

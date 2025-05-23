@@ -4,20 +4,18 @@ from PyQt5.QtCore import Qt
 
 from app.views.components.data_upload_components.data_table_component import DataTableComponent
 
-
+"""
+사이드바 관리를 위한 클래스
+파일 탐색기 사이드바와 파일 데이터 로딩 담당
+"""
 class SidebarManager:
-    """
-    사이드바 관리를 위한 클래스
-    파일 탐색기 사이드바와 파일 데이터 로딩 담당
-    """
-
     def __init__(self, parent):
         self.parent = parent
         self.file_explorer = parent.file_explorer
         self.updating_from_sidebar = False
 
+    """파일을 사이드바에 추가하고 DataStore에 등록"""
     def add_file_to_sidebar(self, file_path):
-        """파일을 사이드바에 추가하고 DataStore에 등록"""
         # 파일 확장자 확인
         file_ext = os.path.splitext(file_path)[1].lower()
 
@@ -77,8 +75,8 @@ class SidebarManager:
         except Exception as e:
             return False, f"파일 로드 오류: {str(e)}"
 
+    """사이드바에서 파일 제거 및 관련 데이터 정리"""
     def remove_file_from_sidebar(self, file_path):
-        """사이드바에서 파일 제거 및 관련 데이터 정리"""
         # 사이드바에서 파일 제거
         result = self.file_explorer.remove_file(file_path)
 
@@ -90,18 +88,11 @@ class SidebarManager:
         if file_path in self.parent.data_modifier.modified_data_dict:
             del self.parent.data_modifier.modified_data_dict[file_path]
 
-        # DataStore에서도 관련 데이터프레임 제거
-        from app.models.common.file_store import DataStore
-        df_dict = DataStore.get("dataframes", {})
-        keys_to_remove = []
-        for key in df_dict.keys():
-            if key == file_path or key.startswith(f"{file_path}:"):
-                keys_to_remove.append(key)
+        # DataStore에서 해당 파일 관련 데이터만 제거
+        self._clear_file_related_datastore(file_path)
 
-        for key in keys_to_remove:
-            del df_dict[key]
-
-        DataStore.set("dataframes", df_dict)
+        # FilePaths에서 해당 경로 제거
+        self._clear_file_paths(file_path)
 
         # 현재 표시 중인 파일이 제거된 경우, 화면 초기화
         if self.parent.current_file == file_path:
@@ -110,13 +101,58 @@ class SidebarManager:
 
         return result
 
-    def on_file_or_sheet_selected(self, file_path, sheet_name):
-        """
-        파일 탐색기에서 파일이나 시트 선택 처리
-        선택된 항목을 탭으로 표시하거나 기존 탭 활성화
-        """
-        print(f"사이드바에서 선택됨: {file_path}, 시트: {sheet_name}")
+    """파일과 관련된 DataStore 데이터 정리"""
+    def _clear_file_related_datastore(self, file_path):
+        from app.models.common.file_store import DataStore
 
+        # 1. dataframes 정리
+        df_dict = DataStore.get("dataframes", {})
+        keys_to_remove = [key for key in df_dict.keys()
+                          if key == file_path or key.startswith(f"{file_path}:")]
+        for key in keys_to_remove:
+            del df_dict[key]
+        DataStore.set("dataframes", df_dict)
+
+        # 2. original_dataframes 정리
+        original_df_dict = DataStore.get('original_dataframes', {})
+        keys_to_remove = [key for key in original_df_dict.keys()
+                          if key == file_path or key.startswith(f"{file_path}:")]
+        for key in keys_to_remove:
+            del original_df_dict[key]
+        DataStore.set('original_dataframes', original_df_dict)
+
+        # 3. 파일 타입별 처리
+        file_name = os.path.basename(file_path).lower()
+
+        # 핵심 파일이 삭제된 경우 관련 분석 데이터 모두 정리
+        if any(keyword in file_name for keyword in ['demand', 'dynamic', 'master']):
+            DataStore.delete('organized_dataframes')
+            DataStore.delete('optimization_result')
+
+        # dynamic 파일이 삭제된 경우 maintenance 관련 데이터 정리
+        if 'dynamic' in file_name:
+            DataStore.delete('maintenance_thresholds_items')
+            DataStore.delete('maintenance_thresholds_rmcs')
+
+    """FilePaths에서 해당 파일 경로 제거"""
+    def _clear_file_paths(self, file_path):
+        from app.models.common.file_store import FilePaths
+
+        # 현재 등록된 경로들 확인하고 일치하는 것 제거
+        path_keys = [
+            "demand_excel_file", "dynamic_excel_file", "master_excel_file",
+            "pre_assign_excel_file", "etc_excel_file", "result_file"
+        ]
+
+        for key in path_keys:
+            if FilePaths.get(key) == file_path:
+                FilePaths.set(key, None)
+
+    """
+    파일 탐색기에서 파일이나 시트 선택 처리
+    선택된 항목을 탭으로 표시하거나 기존 탭 활성화
+    """
+    def on_file_or_sheet_selected(self, file_path, sheet_name):
         # 탭으로부터의 업데이트 중이면 무시 (무한 루프 방지)
         if self.parent.tab_manager.updating_from_tab:
             return
@@ -125,7 +161,6 @@ class SidebarManager:
 
         # 파일이 로드되지 않은 경우
         if file_path not in self.parent.loaded_files:
-            print("선택한 파일이 로드되지 않았습니다")
             self.updating_from_sidebar = False
             return
 

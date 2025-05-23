@@ -10,13 +10,11 @@ from app.resources.fonts.font_manager import font_manager
 from app.models.common.screen_manager import *
 from app.models.common.file_store import DataStore
 
-
+"""
+파일 탭 관리를 위한 클래스
+DataInputPage의 탭 관련 로직을 모두 담당
+"""
 class FileTabManager:
-    """
-    파일 탭 관리를 위한 클래스
-    DataInputPage의 탭 관련 로직을 모두 담당
-    """
-
     def __init__(self, parent):
         self.parent = parent
         self.tab_bar = parent.tab_bar
@@ -72,33 +70,17 @@ class FileTabManager:
 
         self.stacked_widget.setContentsMargins(0, 0, 0, 0)
 
+    """새 탭 생성 - 항상 원본 파일에서 로드"""
     def create_new_tab(self, file_path, sheet_name):
-        """새 탭 생성"""
         try:
-            file_info = self.parent.loaded_files[file_path]
+            # 🔥 항상 원본 파일에서 로드 (우선순위 체크 제거)
+            if sheet_name:
+                df = DataTableComponent.load_data_from_file(file_path, sheet_name=sheet_name)
+            else:
+                df = DataTableComponent.load_data_from_file(file_path)
 
-            # 수정된 데이터 우선 확인
-            df = None
-            if file_path in self.parent.data_modifier.modified_data_dict:
-                sheet_key = sheet_name or 'data'
-                if sheet_key in self.parent.data_modifier.modified_data_dict[file_path]:
-                    df = self.parent.data_modifier.modified_data_dict[file_path][sheet_key]
-                    print(f"수정된 데이터 로드됨: {file_path}, 시트: {sheet_name}")
-
-            # 수정된 데이터가 없으면 원본 데이터 로드
-            if df is None:
-                if sheet_name and file_info['sheets'] and sheet_name in file_info['sheets']:
-                    # 시트가 명시적으로 선택된 경우
-                    df = DataTableComponent.load_data_from_file(file_path, sheet_name=sheet_name)
-                    file_info['df'] = df  # 현재 로드된 데이터프레임 업데이트
-                    file_info['current_sheet'] = sheet_name
-                else:
-                    # CSV 파일이거나 시트가 없는 경우
-                    df = file_info['df']
-
-            # 탭 제목 설정 - 여기서 수정
+            # 탭 제목 설정
             file_name = os.path.basename(file_path)
-            # 확장자 제거
             file_name_without_ext = os.path.splitext(file_name)[0]
 
             if sheet_name:
@@ -106,10 +88,9 @@ class FileTabManager:
             else:
                 tab_title = file_name_without_ext
 
-            # 수정된 파일인 경우 표시
+            # 수정된 파일인지 확인하여 표시
             if (file_path in self.parent.data_modifier.modified_data_dict and
-                    (sheet_name in self.parent.data_modifier.modified_data_dict[file_path] or
-                     'data' in self.parent.data_modifier.modified_data_dict[file_path])):
+                    (sheet_name or 'data') in self.parent.data_modifier.modified_data_dict[file_path]):
                 tab_title += " *"
 
             # 새 탭용 위젯 생성
@@ -138,17 +119,16 @@ class FileTabManager:
             self.open_tabs[(file_path, sheet_name)] = tab_index
             self.tab_bar.setCurrentIndex(tab_index)  # 새 탭으로 전환
 
-            # DataStore에 데이터 저장
+            # DataStore에 저장
             from app.models.common.file_store import DataStore
             df_dict = DataStore.get("dataframes", {})
             key = f"{file_path}:{sheet_name}" if sheet_name else file_path
             df_dict[key] = df
             DataStore.set("dataframes", df_dict)
 
+            # original_dataframes에 원본 데이터 저장 (비교용)
             original_df_dict = DataStore.get('original_dataframes', {})
-
             if key not in original_df_dict:
-                # 인덱스와 컬럼을 명시적으로 복사하여 저장
                 try:
                     # 깊은 복사 수행
                     original_df = pd.DataFrame(df.values.copy(),
@@ -167,8 +147,8 @@ class FileTabManager:
             print(f"탭 생성 오류: {str(e)}")
             return -1
 
+    """특정 파일과 시트에 해당하는 탭 닫기"""
     def close_tab(self, file_path, sheet_name):
-        """특정 파일과 시트에 해당하는 탭 닫기"""
         tab_key = (file_path, sheet_name)
 
         if tab_key not in self.open_tabs:
@@ -218,8 +198,8 @@ class FileTabManager:
 
         return True
 
+    """탭이 변경되면 호출되는 함수"""
     def on_tab_changed(self, index):
-        """탭이 변경되면 호출되는 함수"""
         # 이전 탭의 데이터 저장
         prev_idx = self.stacked_widget.currentIndex()
         if prev_idx >= 0 and prev_idx < self.stacked_widget.count():
@@ -278,8 +258,8 @@ class FileTabManager:
             self.parent.current_file = None
             self.parent.current_sheet = None
 
+    """탭 닫기 요청 처리"""
     def on_tab_close_requested(self, index):
-        """탭 닫기 요청 처리"""
         # 시작 페이지는 닫을 수 없음
         if index == 0 and self.tab_bar.tabText(0) == "Start Page":
             return
@@ -353,8 +333,8 @@ class FileTabManager:
         if 0 <= current_idx < self.stacked_widget.count():
             self.stacked_widget.setCurrentIndex(current_idx)
 
+    """Start Page 탭 제거"""
     def remove_start_page(self):
-        """Start Page 탭 제거"""
         if self.tab_bar.count() > 0 and self.tab_bar.tabText(0) == "Start Page":
             # Start Page 위젯 제거
             start_widget = self.stacked_widget.widget(0)
@@ -370,8 +350,8 @@ class FileTabManager:
                 updated_open_tabs[key] = idx - 1
             self.open_tabs = updated_open_tabs
 
+    """Start Page 생성 및 추가"""
     def create_start_page(self):
-        """Start Page 생성 및 추가"""
         # Start Page 위젯 생성
         empty_widget = QWidget()
         empty_layout = QVBoxLayout(empty_widget)
@@ -387,8 +367,8 @@ class FileTabManager:
         self.tab_bar.insertTab(0, "Start Page")
         self.tab_bar.setCurrentIndex(0)
 
+    """파일 관련 모든 탭 닫기"""
     def close_file_tabs(self, file_path):
-        """파일 관련 모든 탭 닫기"""
         # 해당 파일과 관련된 모든 탭 찾아서 닫기
         tabs_to_remove = []
         for (path, sheet), idx in self.open_tabs.items():
@@ -399,8 +379,8 @@ class FileTabManager:
         for key in tabs_to_remove:
             self.close_tab(key[0], key[1])
 
+    """탭 제목 업데이트 (수정 상태에 따라)"""
     def update_tab_title(self, file_path, sheet_name, is_modified=False):
-        """탭 제목 업데이트 (수정 상태에 따라)"""
         # 해당 탭 찾기
         tab_key = (file_path, sheet_name)
         if tab_key not in self.open_tabs:
@@ -430,8 +410,8 @@ class FileTabManager:
         if current_title != tab_title:
             self.tab_bar.setTabText(tab_index, tab_title)
 
+    """현재 선택된 탭의 데이터 저장"""
     def save_current_tab_data(self):
-        """현재 선택된 탭의 데이터 저장"""
         current_tab_index = self.tab_bar.currentIndex()
         if current_tab_index >= 0 and current_tab_index < self.stacked_widget.count():
             current_tab_widget = self.stacked_widget.widget(current_tab_index)
@@ -455,9 +435,7 @@ class FileTabManager:
     """
     undo/redo 시 데이터 변경되었을 때 호출되는 메서드
     """
-
     def on_data_changed_by_undo_redo(self, file_path, sheet_name):
-        """undo/redo 시 데이터 변경되었을 때 호출되는 메서드"""
         all_dataframes = DataStore.get('dataframes', {})
         key = f'{file_path}:{sheet_name}' if sheet_name else file_path
 

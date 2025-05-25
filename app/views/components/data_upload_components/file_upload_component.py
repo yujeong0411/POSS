@@ -178,9 +178,9 @@ class FileUploadComponent(QWidget):
 
         file_paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Excel 파일 선택 (여러 파일 선택 가능)",
+            "Data File Select (Multiple file selection available)",  # 제목도 변경
             initial_dir,
-            "Excel Files (*.xlsx *.xls)"
+            "Data Files (*.xlsx *.xls *.csv);;Excel Files (*.xlsx *.xls);;CSV Files (*.csv);;All Files (*)"
         )
 
         # 선택된 파일들 처리

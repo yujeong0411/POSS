@@ -2,6 +2,8 @@ import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QProgressBar, QMessageBox
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QColor, QPainter, QPen, QBrush, QLinearGradient
+from app.resources.fonts.font_manager import font_manager
+from app.models.common.screen_manager import *
 
 from app.views.main_window import MainWindow
 import traceback
@@ -27,27 +29,24 @@ class SamsungSplashScreen(QWidget):
         layout.setContentsMargins(40, 40, 40, 40)
         layout.setSpacing(20)
 
+        bold_font = font_manager.get_just_font("SamsungSharpSans-Bold").family()
+        normal_font = font_manager.get_just_font("SamsungOne-700").family()
+
         # 로고 텍스트
         logo_label = QLabel("SAMSUNG")
         logo_label.setAlignment(Qt.AlignCenter)
-        font = QFont("Arial", 25, QFont.Bold)
-        logo_label.setFont(font)
         logo_label.setStyleSheet(
-            f"color: rgb({self.accentColor.red()}, {self.accentColor.green()}, {self.accentColor.blue()});")
+            f"font-family: {bold_font}; font-size: {f(40)}px; font-weight:bold; color: rgb({self.accentColor.red()}, {self.accentColor.green()}, {self.accentColor.blue()});")
 
         # 부제목
         subtitle_label = QLabel("Production Planning Optimization System")
         subtitle_label.setAlignment(Qt.AlignCenter)
-        subtitle_font = QFont("Arial", 14)
-        subtitle_label.setFont(subtitle_font)
-        subtitle_label.setStyleSheet("color: #555555;")
+        subtitle_label.setStyleSheet(f"font-family:{normal_font}; font-size: {f(21)}px;  color: #555555;")
 
         # 로딩 상태 메시지
         self.status_label = QLabel("Initializing...")
         self.status_label.setAlignment(Qt.AlignCenter)
-        status_font = QFont("Arial", 10)
-        self.status_label.setFont(status_font)
-        self.status_label.setStyleSheet("color: #888888;")
+        self.status_label.setStyleSheet(f"font-family:{normal_font}; font-size: {f(16)}px; color: #888888;")
 
         # 프로그레스 바
         self.progress_bar = QProgressBar()
@@ -70,9 +69,7 @@ class SamsungSplashScreen(QWidget):
         # 버전 정보
         version_label = QLabel("Version 1.0.0")
         version_label.setAlignment(Qt.AlignRight | Qt.AlignBottom)
-        version_font = QFont("Arial", 8)
-        version_label.setFont(version_font)
-        version_label.setStyleSheet("color: #AAAAAA;")
+        version_label.setStyleSheet(f"font-family:{normal_font}; font-size: {f(11)}px; color: #AAAAAA;")
 
         layout.addStretch(1)
         layout.addWidget(logo_label)
@@ -122,7 +119,7 @@ class SamsungSplashScreen(QWidget):
             self.current_stage += 1
 
         # 로딩 완료 시 메인 앱 실행 및 스플래시 숨기기
-        if self.progress_value >= 1:
+        if self.progress_value >= 100:
             self.timer.stop()
             self.hide()
 
@@ -133,16 +130,15 @@ class SamsungSplashScreen(QWidget):
                 self.close()
 
             except Exception as e:
-                print(f"메인 애플리케이션 실행 오류: {e}")
                 traceback.print_exc()
 
                 # 사용자에게 오류 메시지 표시
                 error_box = QMessageBox()
                 error_box.setIcon(QMessageBox.Critical)
-                error_box.setText("애플리케이션 시작 실패")
-                error_box.setInformativeText(f"오류 발생: {str(e)}")
+                error_box.setText("Failed to start the application")
+                error_box.setInformativeText(f"Error occurred: {str(e)}")
                 error_box.setDetailedText(traceback.format_exc())
-                error_box.setWindowTitle("시작 오류")
+                error_box.setWindowTitle("Start Error")
                 error_box.exec_()
 
                 # 오류 발생 시 애플리케이션 종료
@@ -169,11 +165,3 @@ class SamsungSplashScreen(QWidget):
         painter.setPen(QPen(QColor(230, 230, 240), 1))
         painter.setBrush(Qt.NoBrush)
         painter.drawRoundedRect(0, 0, self.width() - 1, self.height() - 1, 15, 15)
-
-
-# 직접 실행할 경우 (테스트용)
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    splash = SamsungSplashScreen()
-    splash.show()
-    sys.exit(app.exec_())

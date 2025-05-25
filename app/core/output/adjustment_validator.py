@@ -443,7 +443,8 @@ class PlanAdjustmentValidator:
             self.validate_due_date(item, time),
             self.validate_line_item_compatibility(line, item),
             self.validate_capacity(line, time, new_qty, item, is_move, item_id),
-            self.validate_utilization_rate(line, time, item, new_qty, item_id)
+            self.validate_utilization_rate(line, time, item, new_qty, item_id),
+            self.validate_building_ratios()  
         ]
 
         # 개별 검증 결과 확인
@@ -451,9 +452,9 @@ class PlanAdjustmentValidator:
             if not valid: 
                 return False, message
         
-        # 제조동 비율 제약조건 검증 (임시 데이터셋 생성 후 검증)
-        temp_result_data = self._calculate_adjusted_data(line, time, item, new_qty, source_line, source_time, item_id)
-        valid, message = self.validate_building_ratios(temp_result_data)
+        # # 제조동 비율 제약조건 검증 (임시 데이터셋 생성 후 검증)
+        # temp_result_data = self._calculate_adjusted_data(line, time, item, new_qty, source_line, source_time, item_id)
+        # valid, message = self.validate_building_ratios(temp_result_data)
    
         if not valid:
             return False, message
@@ -657,7 +658,7 @@ class PlanAdjustmentValidator:
         tuple: (성공 여부, 오류 메시지)
     """
     def validate_building_ratios(self, result_data=None):
-        data_df = result_data if result_data is not None else self.result_data
+        data_df = self.result_data
 
         building_ratios = CapaRatioAnalyzer.analyze_capa_ratio(
             data_df=data_df,
@@ -723,72 +724,4 @@ class PlanAdjustmentValidator:
             
         return 0
     
-
-    """
-    조정된 결과 데이터를 계산 (제약조건 검증용 임시 데이터)
-    
-    Args:
-        line (str): 목표 라인 코드
-        time (int): 목표 시프트 번호
-        item (str): 아이템 코드
-        new_qty (int): 새 생산량
-        source_line (str, optional): 이동 시 원래 라인
-        source_time (int, optional): 이동 시 원래 시프트
-        
-    Returns:
-        DataFrame: 조정된 결과 데이터
-    """
-    def _calculate_adjusted_data(self, line, time, item, new_qty, source_line=None, source_time=None, item_id=None):
-        # 제조동별 검증
-        temp_result_data = self.result_data.copy()
-
-        # 이동인 경우 원본 위치에서 제거
-        if source_line and source_time:
-            # ID가 있으면 ID로 마스크 생성
-            if item_id:
-                source_mask = ItemKeyManager.create_mask_by_id(temp_result_data, item_id)
-            else:
-                # 소스 위치에서의 마스크 생성
-                source_mask = ItemKeyManager.create_mask_for_item(temp_result_data, source_line, source_time, item)
-                
-            if source_mask.any():
-                # 원본 데이터 삭제
-                temp_result_data = temp_result_data[~source_mask].reset_index(drop=True)
-
-        # 새 위치에 할당
-        # ID가 있으면 ID로 마스크 생성
-        if item_id:
-            target_mask = ItemKeyManager.create_mask_by_id(temp_result_data, item_id)
-            # 위치 조건 추가
-            target_mask = target_mask & (
-                (temp_result_data['Line'] == line) &
-                (temp_result_data['Time'] == time)
-            )
-        else:
-            # 타겟 위치에서의 마스크 생성
-            target_mask = ItemKeyManager.create_mask_for_item(temp_result_data, line, time, item)
-
-        # 대상 위치에 있으면 업데이트, 없으면 추가
-        if target_mask.any():
-            temp_result_data.loc[target_mask, 'Qty'] = new_qty
-        else:
-            # 새 행 생성
-            new_row = {
-                'Line': line,
-                'Time': time,
-                'Item': item,
-                'Qty': new_qty
-            }
-
-            # 프로젝트, rmc 등 필요한 정보 복사
-            item_data = self.result_data[self.result_data['Item'] == item]
-            if not item_data.empty:
-                for col in ['Project', 'RMC', 'To_site', 'SOP', 'MFG', 'Due_LT']:
-                    if col in item_data and item_data[col].notna().any():
-                        new_row[col] = item_data[col].iloc[0]  # 첫 번째 행의 값만 사용
-
-            # 새 행 추가
-            temp_result_data = pd.concat([temp_result_data, pd.DataFrame([new_row])], ignore_index=True)
-
-        return temp_result_data
     

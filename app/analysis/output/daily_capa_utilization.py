@@ -2,8 +2,7 @@ import pandas as pd
 import numpy as np
 from app.models.common.file_store import FilePaths
 from app.utils.fileHandler import load_file
-import os
-import traceback
+from app.utils.item_key_manager import ItemKeyManager
 
 class CapaUtilization:
     """
@@ -129,6 +128,7 @@ class CapaUtilization:
                 
                 # print(f"[DEBUG] {day} 총 생산능력: {day_total_capacity}")
                 day_capacity[day] = day_total_capacity
+            print(f"요일별 생산 가능량: {day_capacity}")
             
             # 수요 수량에 기반한 일별 생산량 계산
             df_demand['Day'] = df_demand['Time'].map(shift_to_day)
@@ -192,10 +192,6 @@ class CapaUtilization:
     @staticmethod
     def update_utilization_for_cell_move(data_df, item_data, new_data, is_initial=False):
         try:
-            print(f"가동률 업데이트 시도:")
-            print(f"  old_data: {item_data}")
-            print(f"  new_data: {new_data}")
-            
             """1. 입력 데이터 검증 및 정규화"""
             def normalize_data(data):
                 normalized = data.copy()

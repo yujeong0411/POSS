@@ -81,12 +81,6 @@ class PlanDataManager(QObject):
             if rmc_key not in self.rmc_to_items_map:
                 self.rmc_to_items_map[rmc_key] = set()
             self.rmc_to_items_map[rmc_key].add(item_key)
-
-        # 매핑 확인 로그
-        sample_keys = list(self.item_to_rmc_map.keys())[:5]  # 첫 5개 키만 출력
-        print(f"아이템-RMC 매핑 샘플: {sample_keys}")
-        for key in sample_keys:
-            print(f"  {key} -> {self.item_to_rmc_map[key]}")
         
         print(f"관계 초기화 완료: {len(self.item_to_rmc_map)} 아이템-RMC 매핑, {len(self.rmc_to_items_map)} RMC-아이템 매핑")
         

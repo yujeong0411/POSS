@@ -35,6 +35,8 @@ class PlanAdjustmentValidator:
                 try:
                     self.master_data = {
                         "capa_qty": pd.read_excel(master_path, sheet_name="capa_qty"),
+                        "line_available": pd.read_excel(master_path, sheet_name="line_available"),
+                        "capa_portion": pd.read_excel(master_path, sheet_name="capa_portion"),
                         # 필요한 시트가 더 있다면 여기에 추가
                     }
                     print(f"[로드] master 파일에서 데이터 로드: {master_path}")

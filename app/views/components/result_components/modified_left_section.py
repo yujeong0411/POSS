@@ -484,24 +484,59 @@ class ModifiedLeftSection(QWidget):
     """
     데이터 로드 후 필터 데이터 업데이트
     """
+
     def update_filter_data(self):
+        """
+        데이터 로드 후 필터 데이터 업데이트
+        그리드와 동일한 정렬 순서를 사용
+        """
         if self.data is None:
             return
-        
-        # 라인 목록 추출 - Line 컬럼에서 추출
-        lines = []
-        if 'Line' in self.data.columns:
-            # 숫자 형태의 라인도 문자열로 통일
-            lines = [str(line) if not pd.isna(line) else "N/A" for line in self.data['Line']]
-            lines = sorted(set(lines))  # 중복 제거하고 정렬
-        
+
+        # 그리드와 동일한 정렬 로직 적용
+        try:
+            # 제조동 정보 추출 (Line 이름의 첫 글자가 제조동)
+            temp_data = self.data.copy()
+            temp_data['Building'] = temp_data['Line'].str[0]
+
+            # 제조동별 생산량 계산 (정렬 목적)
+            building_production = temp_data.groupby('Building')['Qty'].sum()
+
+            # 생산량 기준으로 제조동 정렬 (내림차순)
+            sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
+
+            # 모든 고유 라인 가져오기
+            all_lines = temp_data['Line'].unique()
+
+            # 제조동별로 정렬된 라인 목록 생성 (그리드와 동일한 로직)
+            lines = []
+            for building in sorted_buildings:
+                # 해당 제조동에 속하는 라인들 찾기
+                building_lines = [line for line in all_lines if line.startswith(building)]
+
+                # 라인 이름 기준 오름차순 정렬 (그리드와 동일)
+                sorted_building_lines = sorted(building_lines)
+
+                # 정렬된 라인 추가
+                lines.extend(sorted_building_lines)
+
+            # 혹시 누락된 라인이 있으면 맨 뒤에 추가
+            remaining_lines = [line for line in all_lines if line not in lines]
+            if remaining_lines:
+                lines.extend(sorted(remaining_lines))
+
+        except Exception as e:
+            print(f"라인 정렬 중 오류 발생: {e}")
+            # 오류 발생 시 기본 정렬 사용
+            lines = sorted(self.data['Line'].unique()) if 'Line' in self.data.columns else []
+
         # 프로젝트 목록 추출 - Project 컬럼에서 추출
         projects = []
         if 'Project' in self.data.columns:
             # nan 값 처리 및 문자열 변환
             projects = [str(project) if not pd.isna(project) else "N/A" for project in self.data['Project']]
             projects = sorted(set(projects))  # 중복 제거하고 정렬
-        
+
         # 필터 위젯에 데이터 설정
         self.filter_widget.set_filter_data(lines, projects)
 
@@ -1084,6 +1119,7 @@ class ModifiedLeftSection(QWidget):
     """
     Line과 Time으로 데이터 그룹화하고 개별 아이템으로 표시
     """
+
     def update_ui_with_signals(self):
         if self.data is None or 'Line' not in self.data.columns or 'Time' not in self.data.columns:
             EnhancedMessageBox.show_validation_error(self, "Grouping Failed",
@@ -1242,8 +1278,31 @@ class ModifiedLeftSection(QWidget):
             df = self.extract_dataframe()
             self.viewDataChanged.emit(df)
 
-            # 필터 데이터 업데이트
-            self.update_filter_data()
+            # *** 중요: 필터 데이터를 그리드 설정 직후에 즉시 업데이트 ***
+            # 정렬된 라인 순서를 직접 전달
+            projects = []
+            if 'Project' in self.data.columns:
+                projects = [str(project) if not pd.isna(project) else "N/A" for project in self.data['Project']]
+                projects = sorted(set(projects))
+
+            # 디버그 출력
+            print(f"DEBUG: 그리드에서 정렬된 라인 순서: {lines}")
+            print(f"DEBUG: 필터 위젯에 전달할 라인 순서: {lines}")
+
+            # 필터 위젯에 정렬된 라인 순서 직접 설정 - 강제로 호출
+            if hasattr(self, 'filter_widget') and self.filter_widget:
+                print("DEBUG: 필터 위젯 존재 - 데이터 설정 중...")
+                self.filter_widget.set_filter_data(lines, projects)
+                print("DEBUG: 필터 위젯 데이터 설정 완료")
+            else:
+                print("DEBUG: 필터 위젯이 없습니다!")
+
+            # 추가로 직접 호출도 해보기
+            try:
+                self.update_filter_data()
+                print("DEBUG: update_filter_data 직접 호출 완료")
+            except Exception as e:
+                print(f"DEBUG: update_filter_data 호출 중 오류: {e}")
 
         except Exception as e:
             # 에러 메시지 표시

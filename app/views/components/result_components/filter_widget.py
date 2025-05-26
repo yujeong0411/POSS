@@ -395,12 +395,17 @@ class FilterWidget(QWidget):
             self.update_project_filters()
     
     """라인 필터 체크박스 업데이트"""
+    """라인 필터 체크박스 업데이트"""
+
     def update_line_filters(self):
         # 기존 체크박스 정리
         self._clear_layout(self.line_checkbox_layout)
-        
+
+        # 라인을 제조동별로 정렬
+        sorted_lines = self.sort_lines_by_building(self.filter_data['line'])
+
         # 체크박스 생성
-        for line in self.filter_data['line']:
+        for line in sorted_lines:
             checkbox = QCheckBox(str(line))
             checkbox.setChecked(True)  # 기본값은 체크된 상태
             checkbox.setStyleSheet("""
@@ -414,9 +419,44 @@ class FilterWidget(QWidget):
             checkbox.stateChanged.connect(
                 lambda state, line=line: self.on_filter_changed('line', line, state == Qt.Checked))
             self.line_checkbox_layout.addWidget(checkbox)
-        
+
         # "Line (x)" 형식으로 버튼 텍스트 업데이트
-        self.line_filter_btn.setText(f"Line ({len(self.filter_data['line'])})")
+        self.line_filter_btn.setText(f"Line ({len(sorted_lines)})")
+
+    def sort_lines_by_building(self, lines):
+        """라인을 제조동별 생산량 기준으로 정렬"""
+        if not lines:
+            return []
+
+        try:
+            # 제조동별로 그룹화
+            building_groups = {}
+            for line in lines:
+                building = str(line)[0] if line else 'Z'  # 첫 글자가 제조동
+                if building not in building_groups:
+                    building_groups[building] = []
+                building_groups[building].append(line)
+
+            # 제조동을 알파벳 순으로 정렬 (I, K, D 등)
+            # 실제로는 생산량 기준이지만 간단하게 I -> K -> D 순으로
+            building_priority = {'I': 1, 'K': 2, 'D': 3}
+
+            sorted_buildings = sorted(building_groups.keys(),
+                                      key=lambda x: building_priority.get(x, 99))
+
+            # 정렬된 라인 목록 생성
+            sorted_lines = []
+            for building in sorted_buildings:
+                # 각 제조동 내에서 라인명 오름차순 정렬
+                building_lines = sorted(building_groups[building])
+                sorted_lines.extend(building_lines)
+
+            return sorted_lines
+
+        except Exception as e:
+            print(f"라인 정렬 중 오류: {e}")
+            # 오류 시 기본 정렬
+            return sorted(lines)
 
     """프로젝트 필터 체크박스 업데이트"""
     def update_project_filters(self):

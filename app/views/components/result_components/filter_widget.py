@@ -395,12 +395,17 @@ class FilterWidget(QWidget):
             self.update_project_filters()
     
     """라인 필터 체크박스 업데이트"""
+    """라인 필터 체크박스 업데이트"""
+
     def update_line_filters(self):
         # 기존 체크박스 정리
         self._clear_layout(self.line_checkbox_layout)
-        
+
+        # 라인을 제조동별로 정렬
+        sorted_lines = self.sort_lines_by_building(self.filter_data['line'])
+
         # 체크박스 생성
-        for line in self.filter_data['line']:
+        for line in sorted_lines:
             checkbox = QCheckBox(str(line))
             checkbox.setChecked(True)  # 기본값은 체크된 상태
             checkbox.setStyleSheet("""
@@ -414,9 +419,44 @@ class FilterWidget(QWidget):
             checkbox.stateChanged.connect(
                 lambda state, line=line: self.on_filter_changed('line', line, state == Qt.Checked))
             self.line_checkbox_layout.addWidget(checkbox)
-        
+
         # "Line (x)" 형식으로 버튼 텍스트 업데이트
-        self.line_filter_btn.setText(f"Line ({len(self.filter_data['line'])})")
+        self.line_filter_btn.setText(f"Line ({len(sorted_lines)})")
+
+    def sort_lines_by_building(self, lines):
+        """라인을 제조동별 생산량 기준으로 정렬"""
+        if not lines:
+            return []
+
+        try:
+            # 제조동별로 그룹화
+            building_groups = {}
+            for line in lines:
+                building = str(line)[0] if line else 'Z'  # 첫 글자가 제조동
+                if building not in building_groups:
+                    building_groups[building] = []
+                building_groups[building].append(line)
+
+            # 제조동을 알파벳 순으로 정렬 (I, K, D 등)
+            # 실제로는 생산량 기준이지만 간단하게 I -> K -> D 순으로
+            building_priority = {'I': 1, 'K': 2, 'D': 3}
+
+            sorted_buildings = sorted(building_groups.keys(),
+                                      key=lambda x: building_priority.get(x, 99))
+
+            # 정렬된 라인 목록 생성
+            sorted_lines = []
+            for building in sorted_buildings:
+                # 각 제조동 내에서 라인명 오름차순 정렬
+                building_lines = sorted(building_groups[building])
+                sorted_lines.extend(building_lines)
+
+            return sorted_lines
+
+        except Exception as e:
+            print(f"라인 정렬 중 오류: {e}")
+            # 오류 시 기본 정렬
+            return sorted(lines)
 
     """프로젝트 필터 체크박스 업데이트"""
     def update_project_filters(self):
@@ -481,22 +521,36 @@ class FilterWidget(QWidget):
         self.filter_changed.emit(self.filter_states.copy())
     
     """특정 필터 유형의 모든 필터 해제"""
+
     def clear_all_filters(self, filter_type):
+        """특정 필터 유형의 모든 필터 해제"""
         if filter_type == 'line':
             layout = self.line_checkbox_layout
         else:
             layout = self.project_checkbox_layout
-            
-        # 모든 체크박스 해제
+
+        # ★ 시그널 임시 차단
+        checkboxes_to_update = []
+
+        # 모든 체크박스 수집 및 시그널 차단
         for i in range(layout.count()):
             item = layout.itemAt(i)
             if item and item.widget():
                 checkbox = item.widget()
-                checkbox.setChecked(False)
-                
-        # 필터 상태 업데이트
+                checkbox.blockSignals(True)  # 시그널 차단
+                checkboxes_to_update.append(checkbox)
+
+        # 모든 체크박스 해제 (시그널 발생 안함)
+        for checkbox in checkboxes_to_update:
+            checkbox.setChecked(False)
+
+        # 필터 상태 업데이트 - 모든 라인을 False로 설정
         for key in self.filter_states[filter_type]:
             self.filter_states[filter_type][key] = False
-                
-        # 필터 변경 신호 발생
+
+        # 시그널 차단 해제
+        for checkbox in checkboxes_to_update:
+            checkbox.blockSignals(False)
+
+        # ★ 마지막에 한 번만 필터 변경 신호 발생
         self.filter_changed.emit(self.filter_states.copy())

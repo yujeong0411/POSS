@@ -521,22 +521,36 @@ class FilterWidget(QWidget):
         self.filter_changed.emit(self.filter_states.copy())
     
     """특정 필터 유형의 모든 필터 해제"""
+
     def clear_all_filters(self, filter_type):
+        """특정 필터 유형의 모든 필터 해제"""
         if filter_type == 'line':
             layout = self.line_checkbox_layout
         else:
             layout = self.project_checkbox_layout
-            
-        # 모든 체크박스 해제
+
+        # ★ 시그널 임시 차단
+        checkboxes_to_update = []
+
+        # 모든 체크박스 수집 및 시그널 차단
         for i in range(layout.count()):
             item = layout.itemAt(i)
             if item and item.widget():
                 checkbox = item.widget()
-                checkbox.setChecked(False)
-                
-        # 필터 상태 업데이트
+                checkbox.blockSignals(True)  # 시그널 차단
+                checkboxes_to_update.append(checkbox)
+
+        # 모든 체크박스 해제 (시그널 발생 안함)
+        for checkbox in checkboxes_to_update:
+            checkbox.setChecked(False)
+
+        # 필터 상태 업데이트 - 모든 라인을 False로 설정
         for key in self.filter_states[filter_type]:
             self.filter_states[filter_type][key] = False
-                
-        # 필터 변경 신호 발생
+
+        # 시그널 차단 해제
+        for checkbox in checkboxes_to_update:
+            checkbox.blockSignals(False)
+
+        # ★ 마지막에 한 번만 필터 변경 신호 발생
         self.filter_changed.emit(self.filter_states.copy())

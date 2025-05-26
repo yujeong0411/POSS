@@ -500,24 +500,45 @@ class FilterWidget(QWidget):
         self.filter_changed.emit(self.filter_states.copy())
     
     """특정 필터 유형의 모든 필터 선택"""
+
     def select_all_filters(self, filter_type):
         if filter_type == 'line':
             layout = self.line_checkbox_layout
         else:
             layout = self.project_checkbox_layout
-            
-        # 모든 체크박스 선택
+
+        # 시그널 연결을 임시로 끊기
+        checkboxes = []
         for i in range(layout.count()):
             item = layout.itemAt(i)
             if item and item.widget():
                 checkbox = item.widget()
-                checkbox.setChecked(True)
-                
+                checkboxes.append(checkbox)
+                # 시그널 연결 해제
+                checkbox.stateChanged.disconnect()
+
+        # 모든 체크박스 선택 (이벤트 발생 안함)
+        for checkbox in checkboxes:
+            checkbox.setChecked(True)
+
         # 필터 상태 업데이트
         for key in self.filter_states[filter_type]:
             self.filter_states[filter_type][key] = True
-                
-        # 필터 변경 신호 발생
+
+        # 시그널 다시 연결
+        for checkbox in checkboxes:
+            if filter_type == 'line':
+                # 라인명 추출
+                line_text = checkbox.text()
+                checkbox.stateChanged.connect(
+                    lambda state, line=line_text: self.on_filter_changed('line', line, state == Qt.Checked))
+            else:
+                # 프로젝트명 추출
+                project_text = checkbox.text()
+                checkbox.stateChanged.connect(
+                    lambda state, proj=project_text: self.on_filter_changed('project', proj, state == Qt.Checked))
+
+        # 필터 변경 신호 한 번만 발생
         self.filter_changed.emit(self.filter_states.copy())
     
     """특정 필터 유형의 모든 필터 해제"""

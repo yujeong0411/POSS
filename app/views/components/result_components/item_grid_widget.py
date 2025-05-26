@@ -67,7 +67,18 @@ class ItemGridWidget(QWidget):
     - column_headers: 열 헤더 리스트
     - line_shifts: 라인별 교대 정보 (형식: {"라인명": ["주간", "야간"]})
     """
+
     def setupGrid(self, rows, columns, row_headers=None, column_headers=None, line_shifts=None):
+        """
+        그리드 초기화
+
+        매개변수:
+        - rows: 행 수
+        - columns: 열 수
+        - row_headers: 행 헤더 리스트 (형식: "Line_(교대)")
+        - column_headers: 열 헤더 리스트
+        - line_shifts: 라인별 교대 정보 (형식: {"라인명": ["주간", "야간"]})
+        """
         for i in reversed(range(self.grid_layout.count())):
             widget = self.grid_layout.itemAt(i).widget()
             if widget is not None:
@@ -107,12 +118,16 @@ class ItemGridWidget(QWidget):
             # 요일 넣는 곳
             for col, header in enumerate(column_headers):
                 label = QLabel(header)
-                label.setStyleSheet(f"font-weight: bold; padding: 5px; background-color: #F0F0F0; border: 1px solid #cccccc; margin-left: 2.5px")
+                label.setStyleSheet(
+                    f"font-weight: bold; padding: 5px; background-color: #F0F0F0; border: 1px solid #cccccc; margin-left: 2.5px")
                 label.setAlignment(Qt.AlignCenter)
                 # 데이터 열은 2부터 시작 (0: 라인 헤더, 1: 교대 헤더)
                 self.grid_layout.addWidget(label, 0, col + 2)
                 # 데이터 열에만 확장 정책 적용
                 self.grid_layout.setColumnStretch(col + 2, 1)
+
+            # ===== 헤더 행은 크기 고정 =====
+            self.grid_layout.setRowStretch(0, 0)
 
         # 라인별 교대 정보가 있는 경우 행 헤더 설정
         if line_shifts:
@@ -167,6 +182,10 @@ class ItemGridWidget(QWidget):
                         separator.setFixedHeight(1)
                         separator.setStyleSheet("background-color: #cccccc")  # 파란색 구분선
                         self.grid_layout.addWidget(separator, row_index, 1, 1, columns + 1)  # 행 전체에 걸쳐 구분선 추가
+
+                        # ===== 구분선 행도 크기 고정 =====
+                        self.grid_layout.setRowStretch(row_index, 0)
+
                         row_index += 1
 
                     shift_label.setStyleSheet(shift_style)
@@ -184,6 +203,9 @@ class ItemGridWidget(QWidget):
 
                     # 라인-행 매핑 저장
                     self.row_line_mapping[row_index] = line
+
+                    # ===== 핵심 수정: 각 데이터 행의 크기를 최소로 제한 =====
+                    self.grid_layout.setRowStretch(row_index, 0)
 
                     # 각 셀에 아이템 컨테이너 추가
                     row_containers = []
@@ -231,9 +253,20 @@ class ItemGridWidget(QWidget):
                 # Night와 다음 Day를 구분하는 선
                 spacer = QFrame()
                 spacer.setMinimumHeight(10)  # 라인 간 간격 높이 설정
+                spacer.setMaximumHeight(10)  # ===== 최대 높이도 제한 =====
                 spacer.setStyleSheet("background-color: #F5F5F5;")  # 간격 배경색
                 self.grid_layout.addWidget(spacer, row_index, 0, 1, columns + 2)  # 모든 열에 걸쳐 추가
+
+                # ===== 스페이서 행도 크기 고정 =====
+                self.grid_layout.setRowStretch(row_index, 0)
+
                 row_index += 1  # 간격 위젯 후 행 인덱스 증가
+
+            # ===== 마지막에 확장 가능한 빈 공간 추가 =====
+            final_spacer = QFrame()
+            final_spacer.setStyleSheet("background-color: transparent;")
+            self.grid_layout.addWidget(final_spacer, row_index, 0, 1, columns + 2)
+            self.grid_layout.setRowStretch(row_index, 1)  # 이 행만 확장되어 남은 공간 차지
 
         else:
             for row in range(rows):
@@ -246,6 +279,9 @@ class ItemGridWidget(QWidget):
                     label.setAlignment(Qt.AlignCenter)
                     label.setFixedWidth(120)
                     self.grid_layout.addWidget(label, row + 1, 0)
+
+                # ===== 각 데이터 행의 크기를 최소로 제한 =====
+                self.grid_layout.setRowStretch(row + 1, 0)
 
                 # 각 셀에 아이템 컨테이너 추가
                 for col in range(columns):
@@ -268,6 +304,12 @@ class ItemGridWidget(QWidget):
                     row_containers.append(container)
 
                 self.containers.append(row_containers)
+
+            # ===== 기존 방식에도 확장 가능한 빈 공간 추가 =====
+            final_spacer = QFrame()
+            final_spacer.setStyleSheet("background-color: transparent;")
+            self.grid_layout.addWidget(final_spacer, rows + 1, 0, 1, columns + 1)
+            self.grid_layout.setRowStretch(rows + 1, 1)  # 이 행만 확장되어 남은 공간 차지
 
     """
     컨테이너에서 아이템이 선택되었을 때 호출되는 핸들러

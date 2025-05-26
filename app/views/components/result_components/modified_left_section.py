@@ -327,13 +327,14 @@ class ModifiedLeftSection(QWidget):
 
             print(f"DEBUG: 필터링된 행 헤더: {filtered_row_headers}")
 
-            # 그리드 재구성 (필터링된 라인만)
+            # 그리드 재구성 (기존 setupGrid 방식 그대로 사용)
             self.grid_widget.setupGrid(
                 rows=len(filtered_row_headers),
                 columns=len(self.days),
                 row_headers=filtered_row_headers,
                 column_headers=self.days,
                 line_shifts=line_shifts
+                # 동적 크기 매개변수 제거 - 기본 동작 유지
             )
 
             # 기존 아이템 모두 지우기

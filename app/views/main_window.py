@@ -3,7 +3,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QCursor
 import os
 from app.core.optimization import Optimization
-from app.views.components import Navbar, DataInputPage, PlanningPage, ResultPage
+from app.views.components import Navbar, DataInputPage, PlanningPage, ResultPage , TestPage
 from app.views.models.data_model import DataModel
 from app.models.common.file_store import FilePaths
 from app.models.common.file_store import DataStore
@@ -106,9 +106,12 @@ class MainWindow(QMainWindow):
         self.result_page = ResultPage(self)
         # 시그널이 정의되지 않았으므로 연결 제거 또는 시그널 추가 필요
 
+        self.test_page = TestPage(self)
+
         self.tab_widget.addTab(self.data_input_page, "Data Input")
         self.tab_widget.addTab(self.planning_page, "Pre-Assigned Result")
         self.tab_widget.addTab(self.result_page, "Results")
+        self.tab_widget.addTab(self.test_page, "Test")
 
         main_layout.addWidget(self.tab_widget)
         self.setCentralWidget(central_widget)

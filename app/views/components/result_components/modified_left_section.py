@@ -14,6 +14,8 @@ from app.utils.fileHandler import load_file
 from app.utils.item_key_manager import ItemKeyManager
 from app.resources.fonts.font_manager import font_manager
 from app.models.common.screen_manager import *
+from app.utils.search_index_manager import SearchIndexManager, SearchResultSorter
+from app.utils.filter_pipeline import FilterPipeline, ItemFilterFactory
 
 class ModifiedLeftSection(QWidget):
     # 데이터 변경을 통합해서 한 번만 내보내는 시그널
@@ -34,6 +36,18 @@ class ModifiedLeftSection(QWidget):
         self.time_periods = ['Day', 'Night']
         self.pre_assigned_items = set()  # 사전할당된 아이템 저장
         self.shipment_failure_items = {}  # 출하 실패 아이템 저장
+
+        # ===== 핵심 상태 변수 추가 =====
+        self._signals_connected = False
+        self._mvc_mode = False
+
+        # ===== 검색 최적화 관련 추가 =====
+        self.search_index_manager = SearchIndexManager()
+        self.search_result_sorter = SearchResultSorter()
+
+        self.filter_pipeline = FilterPipeline()
+        self.item_filter_factory = ItemFilterFactory()
+
         self.init_ui()
 
         # MVC 컴포넌트 초기화
@@ -53,10 +67,10 @@ class ModifiedLeftSection(QWidget):
         if not hasattr(self, 'current_selected_container'):
             self.current_selected_container = None
 
-        # 필터 상태 저장 
+        # 필터 상태 저장
         self.current_filter_states = {
             'shortage': False,
-            'shipment': False,  
+            'shipment': False,
             'pre_assigned': False
         }
 
@@ -65,6 +79,9 @@ class ModifiedLeftSection(QWidget):
             'line': {},
             'project': {}
         }
+
+        # 시그널 연결은 명시적으로 호출할 때만
+        print("ModifiedLeftSection 초기화 완료 - 시그널 연결 보류, 검색 인덱스 매니저 준비됨")
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -212,6 +229,62 @@ class ModifiedLeftSection(QWidget):
         self.grid_widget.itemCopied.connect(self.on_item_copied)  # 아이템 복사 이벤트 연결
         main_layout.addWidget(self.grid_widget, 1)
 
+    def connect_signals(self):
+        """시그널 연결 - 중복 방지 로직 포함"""
+        if self._signals_connected:
+            print("ModifiedLeftSection: 시그널이 이미 연결되어 있음 - 중복 연결 방지")
+            return
+
+        if self._mvc_mode and hasattr(self, 'controller') and self.controller:
+            print("ModifiedLeftSection: MVC 모드 시그널 연결")
+            # MVC 모드: 컨트롤러를 통한 처리만 활성화
+            if hasattr(self.controller.model, 'modelDataChanged'):
+                self.controller.model.modelDataChanged.connect(self.update_from_model)
+                print("ModifiedLeftSection: 모델 modelDataChanged 시그널 -> UI 업데이트 연결")
+        else:
+            print("ModifiedLeftSection: 레거시 모드 시그널 연결")
+            # 레거시 모드: 직접 처리 방식 사용
+            if hasattr(self, 'grid_widget') and hasattr(self.grid_widget, 'itemDataChanged'):
+                self.grid_widget.itemDataChanged.connect(self.on_item_data_changed)
+                print("ModifiedLeftSection: 그리드 위젯 itemDataChanged 시그널 연결")
+
+            if hasattr(self, 'grid_widget') and hasattr(self.grid_widget, 'itemSelected'):
+                self.grid_widget.itemSelected.connect(self.on_grid_item_selected)
+                print("ModifiedLeftSection: 그리드 위젯 itemSelected 시그널 연결")
+
+            if hasattr(self, 'grid_widget') and hasattr(self.grid_widget, 'itemRemoved'):
+                self.grid_widget.itemRemoved.connect(self.on_item_removed)
+                print("ModifiedLeftSection: 그리드 위젯 itemRemoved 시그널 연결")
+
+            if hasattr(self, 'grid_widget') and hasattr(self.grid_widget, 'itemCopied'):
+                self.grid_widget.itemCopied.connect(self.on_item_copied)
+                print("ModifiedLeftSection: 그리드 위젯 itemCopied 시그널 연결")
+
+        self._signals_connected = True
+        print("ModifiedLeftSection: 시그널 연결 완료")
+
+    def on_filter_changed_dict(self, filter_states):
+        """
+        범례 위젯에서 필터가 변경될 때 호출
+        ✅ 수정: 중복 호출 방지 및 효율적인 상태선 업데이트
+        """
+        # 현재 필터 상태 업데이트
+        if self.current_filter_states == filter_states:
+            return
+
+        # 이전 상태 백업 (필터 활성화 감지용)
+        previous_states = self.current_filter_states.copy()
+
+        # 상태선 업데이트만 수행하는 경량 버전 적용
+        self.current_filter_states = filter_states.copy()
+        self.update_status_lines_only(filter_states)
+
+        # 필터 활성화 시 관련 분석 트리거
+        for status_type, is_checked in filter_states.items():
+            was_checked = previous_states.get(status_type, False)
+            # 새로 활성화된 필터에 대한 분석 요청
+            if is_checked and not was_checked:
+                self.on_filter_activation_requested(status_type)
     
     """
     데이터프레임 타입 정규화
@@ -240,9 +313,15 @@ class ModifiedLeftSection(QWidget):
     """
     새로 생성된 아이템 등록
     """
-    def register_item(self, item) :
-        if item not in self.all_items :
+
+    def register_item(self, item):
+        """새로 생성된 아이템 등록 - 검색 인덱스 무효화 추가"""
+        if item not in self.all_items:
             self.all_items.append(item)
+
+            # ===== 검색 인덱스 무효화 =====
+            self.search_index_manager.mark_dirty()
+            # print(f"[최적화] 새 아이템 등록으로 검색 인덱스 무효화: {len(self.all_items)}개 아이템")
 
             # 검색이 활성화되어 있으면 해당 아이템에 검색 적용
             if self.search_widget.is_search_active():
@@ -262,208 +341,330 @@ class ModifiedLeftSection(QWidget):
     """
 
     def apply_all_filters(self):
-        """
-        모든 필터 (범례 & 엑셀 스타일) 적용
-        Line과 Project 필터를 모두 고려하여 데이터 필터링
-        """
-        if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
+        """모든 필터 적용 - 파이프라인 패턴으로 단순화"""
+        if hasattr(self, '_filter_applying') and self._filter_applying:
+            print("ModifiedLeftSection: 필터 적용이 이미 진행 중 - 중복 실행 방지")
             return
 
-        # 현재 활성화된 라인 필터 확인
-        active_lines = []
-        if hasattr(self, 'current_excel_filter_states') and 'line' in self.current_excel_filter_states:
-            for line, is_active in self.current_excel_filter_states['line'].items():
-                if is_active:
-                    active_lines.append(line)
+        self._filter_applying = True
 
-        # 현재 활성화된 프로젝트 필터 확인
-        active_projects = []
-        if hasattr(self, 'current_excel_filter_states') and 'project' in self.current_excel_filter_states:
-            for project, is_active in self.current_excel_filter_states['project'].items():
-                if is_active:
-                    active_projects.append(project)
+        try:
+            if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
+                return
 
-        # *** 핵심 수정: 라인과 프로젝트 필터가 모두 없으면 모든 데이터 표시 ***
-        if not active_lines and not active_projects:
-            print("DEBUG: 활성화된 라인/프로젝트가 없음 - 모든 데이터 표시")
-            if hasattr(self, 'data') and self.data is not None and not self.data.empty:
-                all_lines = self.data['Line'].unique().tolist()
-                self.rebuild_grid_with_filtered_data(all_lines, None)
+            print("[파이프라인] 필터링 시작")
+
+            # ===== 1. 파이프라인 초기화 =====
+            self.filter_pipeline.clear()
+
+            # ===== 2. 활성 필터 상태 확인 =====
+            # 라인 필터
+            active_lines = []
+            if hasattr(self, 'current_excel_filter_states') and 'line' in self.current_excel_filter_states:
+                for line, is_active in self.current_excel_filter_states['line'].items():
+                    if is_active:
+                        active_lines.append(line)
+
+            # 프로젝트 필터
+            active_projects = []
+            if hasattr(self, 'current_excel_filter_states') and 'project' in self.current_excel_filter_states:
+                for project, is_active in self.current_excel_filter_states['project'].items():
+                    if is_active:
+                        active_projects.append(project)
+
+            # 검색 필터
+            search_text = ""
+            if hasattr(self, 'search_widget') and self.search_widget.is_search_active():
+                search_text = self.search_widget.get_search_text()
+
+            # ===== 3. 특별 케이스: 모든 필터가 비활성화 =====
+            if not active_lines and not active_projects and not search_text:
+                print("[파이프라인] 모든 필터 비활성화 - 전체 데이터 표시")
+                if hasattr(self, 'data') and self.data is not None and not self.data.empty:
+                    all_lines = self.data['Line'].unique().tolist()
+                    self.rebuild_grid_with_filtered_data(all_lines, None)
+                else:
+                    self.show_empty_grid()
+                return
+
+            # ===== 4. 파이프라인 구성 =====
+            print(
+                f"[파이프라인] 필터 구성 - 라인:{len(active_lines)}, 프로젝트:{len(active_projects)}, 검색:{'Y' if search_text else 'N'}")
+
+            # 라인 필터 추가
+            if active_lines:
+                line_filter = self.item_filter_factory.create_line_filter(active_lines)
+                self.filter_pipeline.add_filter(line_filter, "라인필터")
+
+            # 프로젝트 필터 추가
+            if active_projects:
+                project_filter = self.item_filter_factory.create_project_filter(active_projects)
+                self.filter_pipeline.add_filter(project_filter, "프로젝트필터")
+
+            # 상태선 필터 추가 (항상 적용)
+            status_filter = self.item_filter_factory.create_status_line_filter(self.current_filter_states)
+            self.filter_pipeline.add_filter(status_filter, "상태선필터")
+
+            # 검색 필터 추가
+            if search_text:
+                search_filter = self.item_filter_factory.create_search_filter(search_text)
+                self.filter_pipeline.add_filter(search_filter, "검색필터")
+
+            # ===== 5. 파이프라인 실행 =====
+            # 필터링 대상: 라인/프로젝트 필터가 있으면 그리드 재구성, 없으면 현재 아이템들 필터링
+            if active_lines or active_projects:
+                # 그리드 재구성 방식
+                print("[파이프라인] 그리드 재구성 모드")
+                self.rebuild_grid_with_filtered_data(active_lines, active_projects)
+
+                # 재구성 후 상태선과 검색 적용
+                if hasattr(self, 'all_items') and self.all_items:
+                    context = {
+                        'filter_states': self.current_filter_states,
+                        'search_text': search_text
+                    }
+
+                    # 상태선과 검색만 적용
+                    status_pipeline = FilterPipeline()
+                    status_pipeline.add_filter(status_filter, "상태선필터")
+                    if search_text:
+                        status_pipeline.add_filter(search_filter, "검색필터")
+
+                    filtered_items = status_pipeline.apply(self.all_items, context)
+
+                    # 검색 결과 업데이트
+                    if search_text:
+                        self.search_results = self.search_result_sorter.sort_by_position(
+                            filtered_items, self.grid_widget
+                        )
+                        if self.search_results:
+                            self.current_result_index = 0
+                            self.select_current_result()
+                            self.update_result_navigation()
+                            self.search_widget.show_result_navigation(True)
+                        else:
+                            self.search_widget.set_result_status(0, 0)
             else:
-                self.show_empty_grid()
-            return
+                # 현재 아이템 필터링 방식 (검색 전용)
+                print("[파이프라인] 아이템 필터링 모드")
+                if hasattr(self, 'all_items') and self.all_items:
+                    context = {
+                        'filter_states': self.current_filter_states,
+                        'search_text': search_text
+                    }
 
-        # 활성화된 필터가 있으면 해당 데이터만 표시
-        print(f"DEBUG: 활성화된 라인들: {active_lines}")
-        print(f"DEBUG: 활성화된 프로젝트들: {active_projects}")
+                    filtered_items = self.filter_pipeline.apply(self.all_items, context)
 
-        # *** 수정: 모든 경우에 rebuild_grid_with_filtered_data 사용 ***
-        # 라인 필터만 있는 경우
-        if active_lines and not active_projects:
-            self.rebuild_grid_with_filtered_data(active_lines, None)
-        # 프로젝트 필터만 있는 경우
-        elif not active_lines and active_projects:
-            # *** 핵심: 빈 라인 리스트 전달 (필터링된 데이터에서 라인 추출하도록) ***
-            self.rebuild_grid_with_filtered_data(None, active_projects)
-        # 라인과 프로젝트 필터가 모두 있는 경우
-        else:
-            self.rebuild_grid_with_filtered_data(active_lines, active_projects)
+                    # 검색 결과 처리
+                    if search_text:
+                        self.search_results = self.search_result_sorter.sort_by_position(
+                            filtered_items, self.grid_widget
+                        )
+                        if self.search_results:
+                            self.current_result_index = 0
+                            self.select_current_result()
+                            self.update_result_navigation()
+                            self.search_widget.show_result_navigation(True)
+                        else:
+                            self.search_widget.set_result_status(0, 0)
+
+            print("[파이프라인] 필터링 완료")
+
+        except Exception as e:
+            print(f"[파이프라인] 필터링 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # 중복 실행 방지 플래그 해제
+            QTimer.singleShot(50, lambda: setattr(self, '_filter_applying', False))
 
     def rebuild_grid_with_filtered_data(self, active_lines, active_projects=None):
         """
         활성화된 라인과 프로젝트로 그리드 재구성
+        ✅ 리팩토링: 거대한 메서드를 명확한 단계로 분할
         """
-        if not self.data is not None:
+        if self.data is None:
             return
 
         try:
-            # 데이터 필터링
-            filtered_data = self.data.copy()
+            print(f"[그리드재구성] 시작 - 라인: {active_lines}, 프로젝트: {active_projects}")
 
-            # 라인 필터 적용
-            if active_lines:
-                filtered_data = filtered_data[filtered_data['Line'].isin(active_lines)]
-
-            # 프로젝트 필터 적용
-            if active_projects and 'Project' in filtered_data.columns:
-                # NaN 값 처리
-                project_mask = filtered_data['Project'].isin(active_projects)
-                # NaN을 "N/A"로 처리한 경우도 고려
-                if "N/A" in active_projects:
-                    nan_mask = filtered_data['Project'].isna()
-                    project_mask = project_mask | nan_mask
-                filtered_data = filtered_data[project_mask]
-
-            print(f"DEBUG: 필터링 후 데이터 행 수: {len(filtered_data)}")
-
+            # ===== 1. 데이터 필터링 =====
+            filtered_data = self._filter_data_by_criteria(active_lines, active_projects)
             if filtered_data.empty:
                 self.show_empty_grid()
                 return
 
-            # *** 핵심 수정: 필터링된 데이터에서 실제 존재하는 라인만 추출 ***
-            actual_lines_in_filtered_data = filtered_data['Line'].unique().tolist()
-            print(f"DEBUG: 필터링된 데이터에 실제 존재하는 라인들: {actual_lines_in_filtered_data}")
+            # ===== 2. 라인 정렬 및 구조 준비 =====
+            sorted_lines = self._prepare_filtered_lines(filtered_data)
+            line_shifts, row_headers = self._create_filtered_grid_structure(sorted_lines)
 
-            # 라인 정렬 (필터링된 데이터의 라인만 사용)
-            filtered_data['Building'] = filtered_data['Line'].str[0]
-            building_production = filtered_data.groupby('Building')['Qty'].sum()
-            sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
+            # ===== 3. 그리드 재구성 =====
+            self._setup_filtered_grid(row_headers, line_shifts)
 
-            # *** 실제 데이터가 있는 라인들만 정렬 ***
-            sorted_active_lines = []
-            for building in sorted_buildings:
-                building_lines = [line for line in actual_lines_in_filtered_data if line.startswith(building)]
-                sorted_building_lines = sorted(building_lines)
-                sorted_active_lines.extend(sorted_building_lines)
+            # ===== 4. 아이템 생성 및 배치 =====
+            item_count = self._populate_filtered_grid(filtered_data, sorted_lines, row_headers)
 
-            # 혹시 누락된 라인이 있으면 추가 (제조동 분류에 실패한 경우)
-            remaining_lines = [line for line in actual_lines_in_filtered_data if line not in sorted_active_lines]
-            if remaining_lines:
-                sorted_active_lines.extend(sorted(remaining_lines))
-
-            print(f"DEBUG: 최종 표시할 라인들: {sorted_active_lines}")
-
-            # 교대 정보 (실제 데이터가 있는 라인만)
-            line_shifts = {}
-            for line in sorted_active_lines:
-                line_shifts[line] = ["Day", "Night"]
-
-            # 행 헤더 (실제 데이터가 있는 라인만)
-            filtered_row_headers = []
-            for line in sorted_active_lines:
-                for shift in ["Day", "Night"]:
-                    filtered_row_headers.append(f"{line}_({shift})")
-
-            print(f"DEBUG: 최종 행 헤더: {filtered_row_headers}")
-
-            # 그리드 재구성
-            self.grid_widget.setupGrid(
-                rows=len(filtered_row_headers),
-                columns=len(self.days),
-                row_headers=filtered_row_headers,
-                column_headers=self.days,
-                line_shifts=line_shifts
-            )
-
-            # 기존 아이템 모두 지우기
-            self.all_items.clear()
-
-            # 필터링된 데이터로 아이템 추가
-            times = sorted(filtered_data['Time'].unique())
-            shifts = {}
-            for time in times:
-                if int(time) % 2 == 1:
-                    shifts[time] = "Day"
-                else:
-                    shifts[time] = "Night"
-
-            # 데이터를 행/열별로 그룹화
-            grouped_items = {}
-
-            for _, row_data in filtered_data.iterrows():
-                line = row_data['Line']
-                time = row_data['Time']
-                shift = shifts[time]
-                day_idx = (int(time) - 1) // 2
-
-                if day_idx >= len(self.days):
-                    continue
-
-                row_key = f"{line}_({shift})"
-
-                try:
-                    row_idx = filtered_row_headers.index(row_key)
-                    col_idx = day_idx
-
-                    grid_key = (row_idx, col_idx)
-                    if grid_key not in grouped_items:
-                        grouped_items[grid_key] = []
-
-                    item_data = row_data.to_dict()
-                    qty = item_data.get('Qty', 0)
-                    if pd.isna(qty):
-                        qty = 0
-                    item_data['Qty'] = int(float(qty)) if isinstance(qty, (int, float, str)) else 0
-                    grouped_items[grid_key].append(item_data)
-
-                except ValueError as e:
-                    print(f"필터링된 그리드에서 인덱스 찾기 오류: {e}")
-                    continue
-
-            # 아이템을 그리드에 추가
-            for (row_idx, col_idx), items in grouped_items.items():
-                for item_data in items:
-                    item_info = str(item_data.get('Item', ''))
-                    qty = item_data.get('Qty', 0)
-                    if pd.notna(qty) and qty != 0:
-                        item_info += f"    {qty}"
-
-                    new_item = self.grid_widget.addItemAt(row_idx, col_idx, item_info, item_data)
-
-                    if new_item:
-                        item_code = item_data.get('Item', '')
-
-                        # 상태 적용
-                        if item_code in self.pre_assigned_items:
-                            new_item.set_pre_assigned_status(True)
-
-                        if item_code in self.shipment_failure_items:
-                            failure_info = self.shipment_failure_items[item_code]
-                            new_item.set_shipment_failure(True, failure_info.get('reason', 'Unknown reason'))
-
-                        if hasattr(self, 'current_shortage_items') and item_code in self.current_shortage_items:
-                            shortage_info = self.current_shortage_items[item_code]
-                            new_item.set_shortage_status(True, shortage_info)
-
-            # 범례 필터도 적용
+            # ===== 5. 상태 적용 =====
             self.apply_legend_filters_only()
 
-            print(f"DEBUG: 필터링된 그리드 재구성 완료 - {len(sorted_active_lines)}개 라인, 프로젝트 필터: {active_projects}")
+            print(f"[그리드재구성] 완료 - {len(sorted_lines)}개 라인, {item_count}개 아이템")
 
         except Exception as e:
-            print(f"필터링된 그리드 구성 중 오류: {e}")
+            print(f"[그리드재구성] 오류: {e}")
             import traceback
             traceback.print_exc()
+
+    def _filter_data_by_criteria(self, active_lines, active_projects):
+        """기준에 따른 데이터 필터링"""
+        filtered_data = self.data.copy()
+
+        # 라인 필터 적용
+        if active_lines:
+            filtered_data = filtered_data[filtered_data['Line'].isin(active_lines)]
+
+        # 프로젝트 필터 적용
+        if active_projects and 'Project' in filtered_data.columns:
+            project_mask = filtered_data['Project'].isin(active_projects)
+            # NaN을 "N/A"로 처리한 경우도 고려
+            if "N/A" in active_projects:
+                nan_mask = filtered_data['Project'].isna()
+                project_mask = project_mask | nan_mask
+            filtered_data = filtered_data[project_mask]
+
+        print(f"[필터링] 원본 {len(self.data)}행 → 필터링 후 {len(filtered_data)}행")
+        return filtered_data
+
+    def _prepare_filtered_lines(self, filtered_data):
+        """필터링된 데이터에서 라인 정렬"""
+        # 실제 존재하는 라인만 추출
+        actual_lines = filtered_data['Line'].unique().tolist()
+
+        # 제조동별 생산량으로 정렬
+        filtered_data['Building'] = filtered_data['Line'].str[0]
+        building_production = filtered_data.groupby('Building')['Qty'].sum()
+        sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
+
+        # 제조동 순서대로 라인 정렬
+        sorted_lines = []
+        for building in sorted_buildings:
+            building_lines = [line for line in actual_lines if line.startswith(building)]
+            sorted_building_lines = sorted(building_lines)
+            sorted_lines.extend(sorted_building_lines)
+
+        # 누락된 라인 추가
+        remaining_lines = [line for line in actual_lines if line not in sorted_lines]
+        if remaining_lines:
+            sorted_lines.extend(sorted(remaining_lines))
+
+        return sorted_lines
+
+    def _create_filtered_grid_structure(self, sorted_lines):
+        """필터링된 그리드 구조 생성"""
+        # 라인별 교대 정보
+        line_shifts = {}
+        for line in sorted_lines:
+            line_shifts[line] = ["Day", "Night"]
+
+        # 행 헤더 생성
+        row_headers = []
+        for line in sorted_lines:
+            for shift in ["Day", "Night"]:
+                row_headers.append(f"{line}_({shift})")
+
+        return line_shifts, row_headers
+
+    def _setup_filtered_grid(self, row_headers, line_shifts):
+        """필터링된 그리드 설정"""
+        self.grid_widget.setupGrid(
+            rows=len(row_headers),
+            columns=len(self.days),
+            row_headers=row_headers,
+            column_headers=self.days,
+            line_shifts=line_shifts
+        )
+
+    def _populate_filtered_grid(self, filtered_data, sorted_lines, row_headers):
+        """필터링된 그리드에 아이템 배치"""
+        # 기존 아이템 정리
+        self.all_items.clear()
+
+        # 교대 정보 준비
+        times = sorted(filtered_data['Time'].unique())
+        shifts = {}
+        for time in times:
+            if int(time) % 2 == 1:
+                shifts[time] = "Day"
+            else:
+                shifts[time] = "Night"
+
+        # 데이터를 행/열별로 그룹화
+        grouped_items = {}
+        for _, row_data in filtered_data.iterrows():
+            line = row_data['Line']
+            time = row_data['Time']
+            shift = shifts[time]
+            day_idx = (int(time) - 1) // 2
+
+            if day_idx >= len(self.days):
+                continue
+
+            row_key = f"{line}_({shift})"
+
+            try:
+                row_idx = row_headers.index(row_key)
+                col_idx = day_idx
+
+                grid_key = (row_idx, col_idx)
+                if grid_key not in grouped_items:
+                    grouped_items[grid_key] = []
+
+                item_data = row_data.to_dict()
+                qty = item_data.get('Qty', 0)
+                if pd.isna(qty):
+                    qty = 0
+                item_data['Qty'] = int(float(qty)) if isinstance(qty, (int, float, str)) else 0
+                grouped_items[grid_key].append(item_data)
+
+            except ValueError as e:
+                print(f"[그리드배치] 인덱스 오류: {e}")
+                continue
+
+        # 아이템을 그리드에 추가
+        item_count = 0
+        for (row_idx, col_idx), items in grouped_items.items():
+            for item_data in items:
+                item_info = str(item_data.get('Item', ''))
+                qty = item_data.get('Qty', 0)
+                if pd.notna(qty) and qty != 0:
+                    item_info += f"    {qty}"
+
+                new_item = self.grid_widget.addItemAt(row_idx, col_idx, item_info, item_data)
+
+                if new_item:
+                    item_count += 1
+                    # 상태 적용
+                    self._apply_item_states(new_item, item_data)
+
+        return item_count
+
+    def _apply_item_states(self, new_item, item_data):
+        """개별 아이템에 상태 적용"""
+        item_code = item_data.get('Item', '')
+
+        # 사전할당 상태
+        if item_code in self.pre_assigned_items:
+            new_item.set_pre_assigned_status(True)
+
+        # 출하 실패 상태
+        if item_code in self.shipment_failure_items:
+            failure_info = self.shipment_failure_items[item_code]
+            new_item.set_shipment_failure(True, failure_info.get('reason', 'Unknown reason'))
+
+        # 자재부족 상태
+        if hasattr(self, 'current_shortage_items') and item_code in self.current_shortage_items:
+            shortage_info = self.current_shortage_items[item_code]
+            new_item.set_shortage_status(True, shortage_info)
 
     def show_empty_grid(self):
         """
@@ -490,158 +691,55 @@ class ModifiedLeftSection(QWidget):
             import traceback
             traceback.print_exc()
 
-    def apply_standard_filters(self):
-        if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
-            return
 
-        # 0. 필터 상태 캐싱
-        excel_filter_active = any(not all(states.values()) for states in self.current_excel_filter_states.values())
-        legend_filter_active = any(self.current_filter_states.values())
-        search_active = self.search_widget.is_search_active()
-        search_text = self.search_widget.get_search_text() if search_active else None
+    def should_show_item_excel_filter(self, item):
+        """엑셀 필터를 고려한 아이템 표시 여부 - 파이프라인 패턴 적용"""
+        if not hasattr(self, 'current_excel_filter_states') or not hasattr(item, 'item_data'):
+            return True
 
-        # 아이템 상태 캐싱 및 배치 처리
-        # 가시성 변경할 아이템, 상태선 변경할 아이템, 검색 하이라이트 변경할 아이템 목록화
-        visibility_changes = []  # (아이템, 표시여부) 튜플 목록
-        stateline_changes = []  # {아이템, 상태 딕셔너리} 목록
-        highlight_changes = []  # (아이템, 하이라이트여부) 튜플 목록
-        search_results = []  # 검색 결과 아이템 목록
+        try:
+            # ===== 1. 빠른 검사: 엑셀 필터가 활성화되어 있는지 확인 =====
+            line_filters = self.current_excel_filter_states.get('line', {})
+            project_filters = self.current_excel_filter_states.get('project', {})
 
-        # 컨테이너별 가시성 변경 여부 추적
-        affected_containers = set()
+            # 모든 필터가 비활성화되면 모든 아이템 표시
+            if not any(line_filters.values()) and not any(project_filters.values()):
+                return True
 
-        # 배치 처리를 위해 한 번만 순회
-        for row_containers in self.grid_widget.containers:
-            for container in row_containers:
-                container_changed = False
+            # ===== 2. 파이프라인 방식으로 필터링 검사 =====
+            from app.utils.filter_pipeline import FilterPipeline
+            excel_pipeline = FilterPipeline()
 
-                for item in container.items:
-                    # 엑셀 필터 적용 (라인/프로젝트)
-                    should_show = True
-                    if excel_filter_active:
-                        should_show = self.should_show_item_excel_filter(item)
+            # 라인 필터 추가
+            active_lines = [line for line, active in line_filters.items() if active]
+            if active_lines:
+                line_filter = self.item_filter_factory.create_line_filter(active_lines)
+                excel_pipeline.add_filter(line_filter, "라인검사")
 
-                    # 가시성 변경 필요한 경우만 기록
-                    if item.isVisible() != should_show:
-                        visibility_changes.append((item, should_show))
-                        container_changed = True
+            # 프로젝트 필터 추가
+            active_projects = [project for project, active in project_filters.items() if active]
+            if active_projects:
+                project_filter = self.item_filter_factory.create_project_filter(active_projects)
+                excel_pipeline.add_filter(project_filter, "프로젝트검사")
 
-                    # 상태선 변경 필요한지 확인 (범례 필터)
-                    if legend_filter_active:
-                        shortage_filter = self.current_filter_states.get('shortage', False)
-                        shipment_filter = self.current_filter_states.get('shipment', False)
-                        pre_assigned_filter = self.current_filter_states.get('pre_assigned', False)
+            # ===== 3. 단일 아이템에 대해 파이프라인 실행 =====
+            context = {'mode': 'visibility_check'}
+            result = excel_pipeline.apply([item], context)
 
-                        # 현재 상태
-                        current_shortage = getattr(item, 'show_shortage_line', False)
-                        current_shipment = getattr(item, 'show_shipment_line', False)
-                        current_pre_assigned = getattr(item, 'show_pre_assigned_line', False)
+            # 결과: 필터를 통과했으면 표시, 아니면 숨김
+            should_show = len(result) > 0
 
-                        # 새로운 상태
-                        new_shortage = shortage_filter and getattr(item, 'is_shortage', False)
-                        new_shipment = shipment_filter and getattr(item, 'is_shipment_failure', False)
-                        new_pre_assigned = pre_assigned_filter and getattr(item, 'is_pre_assigned', False)
+            if hasattr(self, 'debug_filter') and self.debug_filter:
+                item_info = item.item_data.get('Item', 'Unknown') if item.item_data else 'Unknown'
+                print(f"[파이프라인] 엑셀 필터 검사: {item_info} → {'표시' if should_show else '숨김'}")
 
-                        # 상태가 변경된 경우만 기록
-                        if (current_shortage != new_shortage or
-                                current_shipment != new_shipment or
-                                current_pre_assigned != new_pre_assigned):
-                            stateline_changes.append({
-                                'item': item,
-                                'shortage': new_shortage,
-                                'shipment': new_shipment,
-                                'pre_assigned': new_pre_assigned
-                            })
+            return should_show
 
-                    # 검색 기능 처리
-                    if search_active:
-                        is_match = search_text in str(item.item_data.get('Item', '')).lower() if hasattr(item,
-                                                                                                         'item_data') else False
-
-                        # 검색 결과에 추가
-                        if is_match:
-                            search_results.append(item)
-
-                        # 검색 하이라이트 상태 변경 필요한 경우
-                        current_highlight = getattr(item, 'is_search_focused', False)
-                        if current_highlight != is_match:
-                            highlight_changes.append((item, is_match))
-
-                # 컨테이너에 변경이 있으면 기록
-                if container_changed:
-                    affected_containers.add(container)
-
-        # 일괄 처리 단계
-
-        # 1. 가시성 변경 일괄 적용
-        for item, should_show in visibility_changes:
-            item.setVisible(should_show)
-
-        # 2. 상태선 변경 일괄 적용
-        for change in stateline_changes:
-            item = change['item']
-            if hasattr(item, 'show_shortage_line'):
-                item.show_shortage_line = change['shortage']
-            if hasattr(item, 'show_shipment_line'):
-                item.show_shipment_line = change['shipment']
-            if hasattr(item, 'show_pre_assigned_line'):
-                item.show_pre_assigned_line = change['pre_assigned']
-            # 상태선 업데이트
-            item.update()
-
-        # 3. 검색 하이라이트 일괄 적용
-        for item, highlight in highlight_changes:
-            if hasattr(item, 'set_search_focus'):
-                item.set_search_focus(highlight)
-
-        # 4. 검색 결과 업데이트
-        if search_active:
-            self.search_results = search_results
-
-            if self.search_results:
-                # 선택 위치 업데이트
-                if self.current_result_index < 0 or self.current_result_index >= len(self.search_results):
-                    self.current_result_index = 0
-                self.update_result_navigation()
-
-                # 선택된 검색 결과로 스크롤
-                if 0 <= self.current_result_index < len(self.search_results):
-                    self.select_current_result()
-            else:
-                # 검색 결과 없음 표시
-                self.search_widget.set_result_status(0, 0)
-                self.search_widget.show_result_navigation(True)
-
-        # 5. 영향 받은 컨테이너만 크기 조정
-        for container in affected_containers:
-            container.adjustSize()
-
-    def apply_legend_filters_only(self):
-        """
-        범례 필터만 적용 (상태선 표시)
-        """
-        if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
-            return
-
-        # 범례 필터 상태 확인
-        shortage_filter = self.current_filter_states.get('shortage', False)
-        shipment_filter = self.current_filter_states.get('shipment', False)
-        pre_assigned_filter = self.current_filter_states.get('pre_assigned', False)
-
-        # 모든 아이템에 상태선 적용
-        for row_containers in self.grid_widget.containers:
-            for container in row_containers:
-                for item in container.items:
-                    # 상태선 설정
-                    if hasattr(item, 'show_shortage_line'):
-                        item.show_shortage_line = shortage_filter and getattr(item, 'is_shortage', False)
-                    if hasattr(item, 'show_shipment_line'):
-                        item.show_shipment_line = shipment_filter and getattr(item, 'is_shipment_failure', False)
-                    if hasattr(item, 'show_pre_assigned_line'):
-                        item.show_pre_assigned_line = pre_assigned_filter and getattr(item, 'is_pre_assigned', False)
-
-                    # 상태선 업데이트
-                    item.update()
+        except Exception as e:
+            if hasattr(self, 'debug_filter') and self.debug_filter:
+                print(f"[파이프라인] 엑셀 필터 검사 오류: {e}")
+            # 오류 시 안전하게 표시
+            return True
 
     """
     상태 필터에 따른 아이템 표시 여부 결정
@@ -799,85 +897,122 @@ class ModifiedLeftSection(QWidget):
     """
 
     def search_items(self, search_text):
-        search_text = search_text.strip().lower()
-
-        if not search_text:
-            self.clear_search()
+        """검색 기능 실행 - 인덱스 기반 최적화 + 파이프라인 통합"""
+        if hasattr(self, '_search_in_progress') and self._search_in_progress:
+            print("ModifiedLeftSection: 검색이 이미 진행 중 - 중복 실행 방지")
             return
 
-        # 검색 상태 업데이트
-        self.search_results = []
-        self.current_result_index = -1
+        self._search_in_progress = True
 
-        # 그리드의 모든 선택 상태 초기화
-        if hasattr(self.grid_widget, 'clear_all_selections'):
-            self.grid_widget.clear_all_selections()
-        self.current_selected_item = None
-        self.current_selected_container = None
+        try:
+            search_text = search_text.strip().lower()
 
-        # 검색 결과를 행 우선으로 정렬하기 위한 임시 리스트
-        row_ordered_results = []
-        invalid_items = []
+            if not search_text:
+                self.clear_search()
+                return
 
-        # *** 핵심 변경: 행 우선 순서로 아이템 수집 ***
-        if hasattr(self.grid_widget, 'containers'):
-            for row_idx, row_containers in enumerate(self.grid_widget.containers):
-                for col_idx, container in enumerate(row_containers):
-                    for item in container.items:
-                        try:
-                            # 검색 조건 확인
-                            if hasattr(item, 'item_data') and item.item_data:
-                                item_code = str(item.item_data.get('Item', '')).lower()
-                                is_match = search_text in item_code
+            print(f"[파이프라인] 통합 검색 시작: '{search_text}'")
 
-                                if is_match:
-                                    # 행과 열 정보와 함께 저장 (행 우선 정렬용)
-                                    row_ordered_results.append({
-                                        'item': item,
-                                        'row': row_idx,
-                                        'col': col_idx
-                                    })
+            # ===== 1. 인덱스가 오래되었으면 재구축 =====
+            if self.search_index_manager.dirty:
+                print("[최적화] 검색 인덱스 재구축 중...")
+                valid_items = self.search_index_manager.build_index(self.all_items)
+                self.all_items = valid_items
 
-                                # 검색 포커스 설정
-                                if hasattr(item, 'set_search_focus'):
-                                    current_focus = getattr(item, 'is_search_focused', False)
-                                    if current_focus != is_match:
-                                        item.set_search_focus(is_match)
+            # ===== 2. 인덱스 기반 빠른 검색 =====
+            matched_items = self.search_index_manager.search(search_text)
+            print(f"[파이프라인] 인덱스 검색 결과: {len(matched_items)}개")
 
-                        except RuntimeError:
-                            invalid_items.append(item)
-                        except Exception as e:
-                            print(f"검색 중 오류 발생: {e}")
+            # ===== 3. 파이프라인을 통한 통합 필터링 =====
+            from app.utils.filter_pipeline import PipelineTemplates
+            search_pipeline = PipelineTemplates.create_search_only_pipeline()
 
-        # 유효하지 않은 아이템 목록에서 제거
-        for item in invalid_items:
-            if item in self.all_items:
-                self.all_items.remove(item)
+            # 현재 활성화된 엑셀 필터들 확인
+            active_lines = []
+            active_projects = []
+            if hasattr(self, 'current_excel_filter_states'):
+                line_filters = self.current_excel_filter_states.get('line', {})
+                project_filters = self.current_excel_filter_states.get('project', {})
 
-        # *** 핵심 변경: 행 우선 정렬 (row -> col 순서) ***
-        row_ordered_results.sort(key=lambda x: (x['row'], x['col']))
+                active_lines = [line for line, active in line_filters.items() if active]
+                active_projects = [project for project, active in project_filters.items() if active]
 
-        # 정렬된 순서로 검색 결과 저장
-        self.search_results = [result['item'] for result in row_ordered_results]
+            # 엑셀 필터가 활성화된 경우 추가 필터링
+            if active_lines:
+                line_filter = self.item_filter_factory.create_line_filter(active_lines)
+                search_pipeline.add_filter(line_filter, "검색+라인필터")
 
-        # 컨테이너 가시성 업데이트
-        if hasattr(self.grid_widget, 'update_container_visibility'):
-            self.grid_widget.update_container_visibility()
+            if active_projects:
+                project_filter = self.item_filter_factory.create_project_filter(active_projects)
+                search_pipeline.add_filter(project_filter, "검색+프로젝트필터")
 
-        # 결과 네비게이션 표시
-        self.search_widget.show_result_navigation(True)
+            # 상태선 필터 (항상 적용)
+            status_filter = self.item_filter_factory.create_status_line_filter(self.current_filter_states)
+            search_pipeline.add_filter(status_filter, "검색+상태선필터")
 
-        # 검색 결과 처리
-        if self.search_results:
-            self.current_result_index = 0
-            self.select_current_result()
-            self.update_result_navigation()
+            # ===== 4. 파이프라인 실행으로 최종 필터링 =====
+            context = {
+                'search_text': search_text,
+                'filter_states': self.current_filter_states,
+                'mode': 'search_with_filters'
+            }
 
-            print(f"검색 완료: '{search_text}' - {len(self.search_results)}개 결과 (행 우선 정렬)")
-        else:
-            # 검색 결과 없음 표시
-            self.search_widget.set_result_status(0, 0)
-            print(f"검색 결과 없음: '{search_text}'")
+            # 검색된 아이템들에 추가 필터 적용
+            if matched_items:
+                final_filtered_items = search_pipeline.apply(matched_items, context)
+                print(f"[파이프라인] 최종 검색 결과: {len(final_filtered_items)}개")
+            else:
+                final_filtered_items = []
+
+            # ===== 5. 모든 아이템에 검색 포커스 적용 =====
+            for item in self.all_items:
+                try:
+                    if hasattr(item, 'set_search_focus'):
+                        is_match = item in matched_items
+                        current_focus = getattr(item, 'is_search_focused', False)
+                        if current_focus != is_match:
+                            item.set_search_focus(is_match)
+                except RuntimeError:
+                    continue
+                except Exception as e:
+                    print(f"검색 포커스 설정 중 오류: {e}")
+                    continue
+
+            # ===== 6. 검색 결과 위치 기반 정렬 =====
+            if final_filtered_items:
+                self.search_results = self.search_result_sorter.sort_by_position(
+                    final_filtered_items, self.grid_widget
+                )
+                print(f"[파이프라인] 검색 결과 정렬 완료: {len(self.search_results)}개")
+            else:
+                self.search_results = []
+
+            # ===== 7. 그리드 선택 상태 초기화 =====
+            if hasattr(self.grid_widget, 'clear_all_selections'):
+                self.grid_widget.clear_all_selections()
+            self.current_selected_item = None
+            self.current_selected_container = None
+
+            # ===== 8. 컨테이너 가시성 업데이트 =====
+            if hasattr(self.grid_widget, 'update_container_visibility'):
+                self.grid_widget.update_container_visibility()
+
+            # ===== 9. 결과 네비게이션 표시 =====
+            self.search_widget.show_result_navigation(True)
+
+            # ===== 10. 검색 결과 처리 =====
+            if self.search_results:
+                self.current_result_index = 0
+                self.select_current_result()
+                self.update_result_navigation()
+                print(f"[파이프라인] 통합 검색 완료: '{search_text}' - {len(self.search_results)}개 결과 (인덱스+파이프라인)")
+            else:
+                self.search_widget.set_result_status(0, 0)
+                print(f"[파이프라인] 검색 결과 없음: '{search_text}'")
+
+        finally:
+            # 중복 실행 방지 플래그 해제
+            QTimer.singleShot(100, lambda: setattr(self, '_search_in_progress', False))
 
     """
     아이템에 검색 조건 적용
@@ -944,33 +1079,72 @@ class ModifiedLeftSection(QWidget):
     """
 
     def clear_search(self):
+        """검색 초기화 - 최적화된 포커스 해제"""
         try:
-            # 모든 아이템의 검색 포커스 해제
-            for item in self.all_items:
-                if hasattr(item, 'set_search_focus'):
-                    item.set_search_focus(False)
-                if hasattr(item, 'set_search_current'):
-                    item.set_search_current(False)
-                # 강제 업데이트
-                if hasattr(item, 'repaint'):
-                    item.repaint()
-                if hasattr(item, 'update'):
-                    item.update()
+            print("[최적화] 검색 초기화 시작")
 
-            # 선택 상태 초기화
+            # ===== 1. 인덱스 기반 효율적인 포커스 해제 =====
+            if hasattr(self, 'search_index_manager') and not self.search_index_manager.dirty:
+                # 인덱스가 유효하면 검색된 아이템들만 포커스 해제
+                if hasattr(self, 'search_results') and self.search_results:
+                    print(f"[최적화] 검색 결과 {len(self.search_results)}개 아이템만 포커스 해제")
+                    for item in self.search_results:
+                        try:
+                            if hasattr(item, 'set_search_focus'):
+                                item.set_search_focus(False)
+                            if hasattr(item, 'set_search_current'):
+                                item.set_search_current(False)
+                            # 강제 업데이트
+                            if hasattr(item, 'repaint'):
+                                item.repaint()
+                            if hasattr(item, 'update'):
+                                item.update()
+                        except RuntimeError:
+                            # 삭제된 위젯은 무시
+                            continue
+                        except Exception as e:
+                            print(f"검색 포커스 해제 중 오류: {e}")
+                            continue
+                else:
+                    print("[최적화] 검색 결과가 없어 포커스 해제 스킵")
+            else:
+                # 인덱스가 무효하면 전체 아이템 순회 (기존 방식)
+                print("[최적화] 인덱스 무효 - 전체 아이템 포커스 해제")
+                for item in self.all_items:
+                    try:
+                        if hasattr(item, 'set_search_focus'):
+                            item.set_search_focus(False)
+                        if hasattr(item, 'set_search_current'):
+                            item.set_search_current(False)
+                        # 강제 업데이트
+                        if hasattr(item, 'repaint'):
+                            item.repaint()
+                        if hasattr(item, 'update'):
+                            item.update()
+                    except RuntimeError:
+                        # 삭제된 위젯은 무시
+                        continue
+                    except Exception as e:
+                        print(f"검색 포커스 해제 중 오류: {e}")
+                        continue
+
+            # ===== 2. 선택 상태 초기화 =====
             if hasattr(self.grid_widget, 'clear_all_selections'):
                 self.grid_widget.clear_all_selections()
             self.current_selected_item = None
             self.current_selected_container = None
-        except Exception as e:
-            print(f"선택 초기화 오류: {e}")
 
-        # 검색 상태 초기화
+        except Exception as e:
+            print(f"검색 초기화 오류: {e}")
+
+        # ===== 3. 검색 상태 초기화 =====
         self.search_results = []
         self.current_result_index = -1
 
-        # 필터 적용
+        # ===== 4. 필터 적용 =====
         self.apply_all_filters()
+
+        print("[최적화] 검색 초기화 완료")
     """
     이전 검색 결과로 이동 (SearchWidget의 prevResultRequested 시그널에 연결)
     """
@@ -1173,81 +1347,13 @@ class ModifiedLeftSection(QWidget):
             self.search_widget.set_result_status(0, 0)
             print(f"검색 결과 없음: '{search_text}'")
 
-    def search_items_without_clear(self):
-        search_text = self.search_widget.get_search_text()
-        if not search_text:
-            return
-
-        # 현재 선택된 아이템 저장
-        current_selected_item = self.current_selected_item
-
-        # 검색 결과를 행 우선으로 정렬하기 위한 임시 리스트
-        row_ordered_results = []
-        invalid_items = []
-
-        # *** 핵심 변경: 행 우선 순서로 아이템 수집 ***
-        if hasattr(self.grid_widget, 'containers'):
-            for row_idx, row_containers in enumerate(self.grid_widget.containers):
-                for col_idx, container in enumerate(row_containers):
-                    for item in container.items:
-                        try:
-                            # 검색 조건 확인
-                            if hasattr(item, 'item_data') and item.item_data:
-                                item_code = str(item.item_data.get('Item', '')).lower()
-                                is_match = search_text in item_code
-
-                                if is_match:
-                                    # 행과 열 정보와 함께 저장 (행 우선 정렬용)
-                                    row_ordered_results.append({
-                                        'item': item,
-                                        'row': row_idx,
-                                        'col': col_idx
-                                    })
-
-                                # 검색 포커스 설정
-                                self.apply_search_to_item(item, search_text)
-
-                        except RuntimeError:
-                            invalid_items.append(item)
-                        except Exception as e:
-                            print(f"검색 중 오류 발생: {e}")
-
-        # 잘못된 아이템 제거
-        for item in invalid_items:
-            if item in self.all_items:
-                self.all_items.remove(item)
-
-        # *** 핵심 변경: 행 우선 정렬 (row -> col 순서) ***
-        row_ordered_results.sort(key=lambda x: (x['row'], x['col']))
-
-        # 정렬된 순서로 검색 결과 저장
-        self.search_results = [result['item'] for result in row_ordered_results]
-
-        # 모든 필터 적용 (검색 결과 포함)
-        self.apply_all_filters()
-
-        # 검색 결과 UI 업데이트
-        self.search_widget.show_result_navigation(True)
-
-        # 검색 결과가 있으면 선택 및 네비게이션 업데이트
-        if self.search_results:
-            # 이전에 선택된 아이템이 검색 결과에 있으면 선택 유지
-            if current_selected_item in self.search_results:
-                self.current_result_index = self.search_results.index(current_selected_item)
-            else:
-                self.current_result_index = 0
-
-            self.select_current_result()
-            self.update_result_navigation()
-        else:
-            # 검색 결과 없음 표시
-            self.search_widget.set_result_status(0, 0)
 
     """
     아이템 데이터가 변경되면 호출되는 함수
     """
 
     def on_item_data_changed(self, item, new_data, changed_fields=None):
+        """아이템 데이터 변경 처리 - 모드별 분기"""
         if not item or not new_data or not hasattr(item, 'item_data'):
             print("아이템 또는 데이터가 없음")
             return
@@ -1261,33 +1367,21 @@ class ModifiedLeftSection(QWidget):
             new_data['Time'] = original_data.get('Time', new_data.get('Time'))
 
         # MVC 컨트롤러가 있으면 시그널 발생
-        if hasattr(self, 'controller') and self.controller:
-            print("MVC 컨트롤러로 처리 - 시그널 발생")
+        if self._mvc_mode and hasattr(self, 'controller') and self.controller:
+            print("ModifiedLeftSection: MVC 모드 - 컨트롤러로 처리")
             self.itemModified.emit(item, new_data, changed_fields)
 
             # *** 핵심: 모든 후처리를 즉시 실행 - 지연 없음 ***
             # 출하 분석만 간단하게 트리거
             self.trigger_shipment_analysis()
             return
-    
-    """데이터 변경 시 출하 분석을 트리거합니다"""
-    def trigger_shipment_analysis(self):
-        if hasattr(self, 'parent_page') and self.parent_page:
-            if hasattr(self.parent_page, 'analyze_shipment_with_current_data'):
-                current_data = self.extract_dataframe()
-                # 1. 출하 분석 요청
-                if current_data is not None and not current_data.empty:
-                    print("왼쪽 테이블 변경 감지 - 출하 분석 실행")
-                    self.parent_page.analyze_shipment_with_current_data(current_data)
-                # 2. 분산 배치 분석 요청 - SplitView 업데이트
-                if hasattr(self.parent_page, 'update_split_view_analysis'):
-                    print("왼쪽 테이블 변경 감지 - 분산 배치 분석 실행")
-                    self.parent_page.update_split_view_analysis(current_data)
+        else:
+            print("ModifiedLeftSection: 레거시 모드 - 직접 처리")
+            # 레거시 모드에서는 기존 로직 실행
+            self._handle_legacy_item_change(item, new_data, changed_fields, original_data)
 
-    """
-    위치 변경 처리 로직 분리
-    """
-    def _handle_position_change(self, item, new_data, changed_fields, old_data):
+    def _handle_legacy_item_change(self, item, new_data, changed_fields, original_data):
+        """레거시 모드에서 아이템 변경 처리"""
         position_change_needed = False
 
         if changed_fields:
@@ -1305,7 +1399,7 @@ class ModifiedLeftSection(QWidget):
 
         if position_change_needed:
             # 위치 변경 로직 (기존 코드 유지)
-            self._process_position_change(item, new_data, changed_fields, old_data)
+            self._process_position_change(item, new_data, changed_fields, original_data)
         else:
             # 데이터만 업데이트
             if hasattr(item, 'update_item_data'):
@@ -1316,6 +1410,203 @@ class ModifiedLeftSection(QWidget):
 
             self.mark_as_modified()
             self.itemModified.emit(item, new_data)
+    
+    """데이터 변경 시 출하 분석을 트리거합니다"""
+
+    def trigger_shipment_analysis(self):
+        """
+        데이터 변경 시 출하 분석을 트리거
+        ✅ 최적화: 중복 호출 방지 및 효율적인 일괄 처리
+        """
+        # ===== 중복 호출 방지 =====
+        if hasattr(self, '_shipment_analysis_pending') and self._shipment_analysis_pending:
+            print("[출하분석] 이미 예약된 분석이 있어 중복 실행 방지")
+            return
+
+        self._shipment_analysis_pending = True
+
+        try:
+            if hasattr(self, 'parent_page') and self.parent_page:
+                current_data = self.extract_dataframe()
+
+                if current_data is not None and not current_data.empty:
+                    # ===== 1. 출하 분석 실행 =====
+                    if hasattr(self.parent_page, 'analyze_shipment_with_current_data'):
+                        print("[출하분석] 출하 분석 실행")
+                        self.parent_page.analyze_shipment_with_current_data(current_data)
+
+                    # ===== 2. 분산 배치 분석 실행 =====
+                    if hasattr(self.parent_page, 'update_split_view_analysis'):
+                        print("[출하분석] 분산 배치 분석 실행")
+                        self.parent_page.update_split_view_analysis(current_data)
+
+                    print("[출하분석] 완료")
+                else:
+                    print("[출하분석] 데이터가 없어 분석 건너뜀")
+
+        except Exception as e:
+            print(f"[출하분석] 오류: {e}")
+        finally:
+            # 분석 완료 후 플래그 해제
+            QTimer.singleShot(100, lambda: setattr(self, '_shipment_analysis_pending', False))
+
+    """
+    위치 변경 처리 로직 분리
+    """
+
+    def _handle_position_change(self, item, new_data, changed_fields, old_data):
+        """
+        위치 변경 처리 로직 - 단순화 및 헬퍼 메서드 활용
+        ✅ 리팩토링: 복잡한 로직을 명확한 단계로 분리
+        """
+        try:
+            print(f"[위치변경] 아이템 위치 변경 처리 시작: {new_data.get('Item')}")
+
+            # ===== 1. 기본 검증 =====
+            if not self._validate_position_change_data(new_data, changed_fields):
+                return False
+
+            # ===== 2. 위치 정보 계산 =====
+            position_info = self._calculate_position_info(new_data, changed_fields, old_data)
+            if not position_info:
+                return False
+
+            # ===== 3. 기존 아이템 제거 =====
+            old_container = item.parent() if hasattr(item, 'parent') else None
+            if old_container and hasattr(old_container, 'remove_item'):
+                old_container.remove_item(item)
+
+            # ===== 4. 새 위치에 아이템 추가 =====
+            new_item = self._create_item_at_new_position(new_data, position_info)
+
+            if new_item:
+                # ===== 5. 상태 복원 및 완료 처리 =====
+                self._finalize_position_change(new_item, new_data, old_data)
+                print(f"[위치변경] 완료: {new_data.get('Item')} @ {position_info['new_line']}-{position_info['new_time']}")
+                return True
+            else:
+                print(f"[위치변경] 실패: 새 아이템 생성 실패")
+                return False
+
+        except Exception as e:
+            print(f"[위치변경] 오류 발생: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _validate_position_change_data(self, new_data, changed_fields):
+        """위치 변경 데이터 검증"""
+        line = new_data.get('Line')
+        new_time = new_data.get('Time')
+
+        if not line or not new_time:
+            print("[위치변경] 필수 데이터 누락: Line 또는 Time")
+            return False
+
+        if not changed_fields:
+            print("[위치변경] 변경 필드 정보 없음")
+            return False
+
+        return True
+
+    def _calculate_position_info(self, new_data, changed_fields, old_data):
+        """위치 정보 계산"""
+        try:
+            line = new_data.get('Line')
+            new_time = new_data.get('Time')
+
+            # 이전 위치 정보 추출
+            old_time = changed_fields.get('Time', {}).get('from', new_time) if changed_fields else new_time
+            old_line = changed_fields.get('Line', {}).get('from', line) if changed_fields else line
+
+            # 위치 인덱스 계산
+            old_day_idx, old_shift = ItemPositionManager.get_day_and_shift(old_time)
+            new_day_idx, new_shift = ItemPositionManager.get_day_and_shift(new_time)
+
+            old_row_key = ItemPositionManager.get_row_key(old_line, old_shift)
+            new_row_key = ItemPositionManager.get_row_key(line, new_shift)
+
+            old_row_idx = ItemPositionManager.find_row_index(old_row_key, self.row_headers)
+            new_row_idx = ItemPositionManager.find_row_index(new_row_key, self.row_headers)
+
+            old_col_idx = ItemPositionManager.get_col_from_day_idx(old_day_idx, self.days)
+            new_col_idx = ItemPositionManager.get_col_from_day_idx(new_day_idx, self.days)
+
+            # 유효성 검사
+            if any(idx < 0 for idx in [old_row_idx, old_col_idx, new_row_idx, new_col_idx]):
+                print("[위치변경] 유효하지 않은 인덱스")
+                return None
+
+            return {
+                'old_line': old_line, 'old_time': old_time,
+                'new_line': line, 'new_time': new_time,
+                'old_row_idx': old_row_idx, 'old_col_idx': old_col_idx,
+                'new_row_idx': new_row_idx, 'new_col_idx': new_col_idx,
+                'new_day_idx': new_day_idx, 'new_shift': new_shift
+            }
+
+        except Exception as e:
+            print(f"[위치변경] 위치 계산 오류: {e}")
+            return None
+
+    def _create_item_at_new_position(self, new_data, position_info):
+        """새 위치에 아이템 생성"""
+        try:
+            # 아이템 텍스트 생성
+            item_text = str(new_data.get('Item', ''))
+            if 'Qty' in new_data and pd.notna(new_data['Qty']):
+                item_text += f"    {new_data['Qty']}"
+
+            # 드롭 인덱스 계산
+            drop_index = self._calculate_drop_index(new_data, position_info)
+
+            # 새 위치에 아이템 추가
+            new_item = self.grid_widget.addItemAt(
+                position_info['new_row_idx'],
+                position_info['new_col_idx'],
+                item_text,
+                new_data,
+                drop_index
+            )
+
+            return new_item
+
+        except Exception as e:
+            print(f"[위치변경] 아이템 생성 오류: {e}")
+            return None
+
+    def _calculate_drop_index(self, new_data, position_info):
+        """드롭 인덱스 계산"""
+        drop_index = 0
+
+        try:
+            # 드롭 위치 정보가 있는 경우
+            if '_drop_pos' in new_data:
+                drop_pos_info = new_data['_drop_pos']
+                x = int(drop_pos_info.get('x', 0))
+                y = int(drop_pos_info.get('y', 0))
+
+                target_container = self.grid_widget.containers[position_info['new_row_idx']][
+                    position_info['new_col_idx']]
+                drop_index = target_container.findDropIndex(QPoint(x, y))
+
+        except Exception as e:
+            print(f"[위치변경] 드롭 인덱스 계산 오류: {e}")
+            drop_index = 0
+
+        return drop_index
+
+    def _finalize_position_change(self, new_item, new_data, old_data):
+        """위치 변경 완료 처리"""
+        # 수정 상태 표시
+        self.mark_as_modified()
+
+        # 아이템 상태 복원
+        self._restore_item_states(new_item, new_data)
+
+        # 셀 이동 이벤트 발생
+        self.cellMoved.emit(new_item, old_data, new_data)
+
 
     """
     위치 변경 처리 (기존 로직 유지)
@@ -1409,14 +1700,27 @@ class ModifiedLeftSection(QWidget):
     """
     MVC 컨트롤러 설정
     """
+
     def set_controller(self, controller):
+        """MVC 컨트롤러 설정 및 MVC 모드 활성화"""
         self.controller = controller
-        print("MVC 컨트롤러가 설정되었습니다")
+        self._mvc_mode = True
+        print("ModifiedLeftSection: MVC 모드로 전환됨")
 
         # 모델 변경 시그널 연결
         if self.controller and hasattr(self.controller.model, 'modelDataChanged'):
+            # 기존 연결이 있다면 해제하고 새로 연결
+            try:
+                self.controller.model.modelDataChanged.disconnect(self.update_from_model)
+            except TypeError:
+                pass  # 연결되어 있지 않은 경우 무시
+
             self.controller.model.modelDataChanged.connect(self.update_from_model)
             print("ModifiedLeftSection: 모델 변경 시그널 연결 완료")
+
+        # 시그널이 아직 연결되지 않았다면 연결
+        if not self._signals_connected:
+            self.connect_signals()
 
     """
     검증기 설정
@@ -1478,198 +1782,182 @@ class ModifiedLeftSection(QWidget):
         self.trigger_shipment_analysis()
 
     """데이터 로드 후 사전 분석 실행"""
+
     def preload_analyses(self):
+        """
+        데이터 로드 후 사전 분석 실행
+        ✅ 리팩토링: 중복 분석 호출 정리 및 효율적인 일괄 처리
+        """
         # 데이터가 없으면 건너뜀
         if self.data is None or self.data.empty:
+            print("[사전분석] 데이터가 없어 분석 건너뜀")
             return
-            
+
         # 결과 페이지 참조 확인
         result_page = self.parent_page
         if not result_page:
+            print("[사전분석] parent_page 참조가 없어 분석 건너뜀")
             return
-            
+
         try:
-            # 탭 위젯들 초기화 요청
-            if hasattr(result_page, 'preload_tab_analyses'):
-                result_page.preload_tab_analyses(self.data)
-                
-            # 범례에도 필터 상태 업데이트 알림
-            if hasattr(self, 'legend_widget'):
-                # 현재 필터 상태 가져오기
-                current_states = self.legend_widget.filter_states
-                
-                # 강제로 필터 변경 이벤트 재발생
-                self.on_filter_changed_dict(current_states)
+            print(f"[사전분석] 시작 - {len(self.data)}행 데이터")
+
+            # ===== 1. 핵심 분석만 사전 실행 (중복 제거) =====
+            analysis_results = self._execute_core_analyses()
+
+            # ===== 2. 탭 위젯 초기화 (필요한 것만) =====
+            self._initialize_essential_tabs(analysis_results)
+
+            # ===== 3. 범례 필터 상태 정리 =====
+            self._update_legend_filters()
+
+            print("[사전분석] 완료 - 핵심 분석만 실행")
+
         except Exception as e:
-            print(f"사전 분석 초기화 중 오류: {e}")
+            print(f"[사전분석] 오류: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _initialize_essential_tabs(self, analysis_results):
+        """필수 탭만 초기화 - 불필요한 중복 제거"""
+        try:
+            # Summary 탭만 사전 초기화 (가장 자주 사용됨)
+            if (hasattr(self.parent_page, 'summary_widget') and
+                    self.parent_page.summary_widget and
+                    analysis_results['data_summary']):
+
+                print("[사전분석] Summary 위젯 초기화")
+                # Summary 위젯에 기본 정보만 설정
+                summary_data = analysis_results['data_summary']
+                # summary_widget가 set_basic_info 메서드를 가지고 있다면 사용
+                if hasattr(self.parent_page.summary_widget, 'set_basic_info'):
+                    self.parent_page.summary_widget.set_basic_info(summary_data)
+
+            # 다른 탭들은 필요할 때 lazy loading으로 처리
+            # (사용자가 탭을 클릭할 때 초기화)
+
+        except Exception as e:
+            print(f"[사전분석] 탭 초기화 중 오류: {e}")
+
+    def _update_legend_filters(self):
+        """범례 필터 상태 정리 - 중복 이벤트 방지"""
+        try:
+            if hasattr(self, 'legend_widget') and self.legend_widget:
+                # 현재 필터 상태 백업
+                current_states = self.legend_widget.filter_states.copy()
+
+                # 상태가 변경된 경우에만 이벤트 발생
+                if current_states != self.current_filter_states:
+                    print("[사전분석] 범례 필터 상태 동기화")
+                    # 직접 상태 설정 (이벤트 발생 방지)
+                    self.legend_widget.set_filter_states(current_states)
+
+        except Exception as e:
+            print(f"[사전분석] 범례 필터 업데이트 중 오류: {e}")
+
+    def _execute_core_analyses(self):
+        """핵심 분석만 실행 - 중복 제거"""
+        analysis_results = {
+            'material_completed': False,
+            'shipment_completed': False,
+            'data_summary': None
+        }
+
+        try:
+            # Material 분석 (자재 부족 분석)
+            if hasattr(self.parent_page, 'material_widget') and self.parent_page.material_widget:
+                print("[사전분석] 자재 부족 분석 실행")
+                self.parent_page.material_widget.run_analysis(self.data)
+                self.parent_page.material_analyzer = self.parent_page.material_widget.get_material_analyzer()
+                analysis_results['material_completed'] = True
+
+            # Shipment 분석 (한 번만 실행)
+            if hasattr(self.parent_page, 'shipment_widget') and self.parent_page.shipment_widget:
+                print("[사전분석] 출하 분석 실행")
+                self.parent_page.shipment_widget.run_analysis(self.data)
+                analysis_results['shipment_completed'] = True
+
+            # 기본 데이터 요약 (Summary용)
+            analysis_results['data_summary'] = {
+                'total_items': len(self.data),
+                'unique_lines': self.data['Line'].nunique(),
+                'total_qty': self.data['Qty'].sum() if 'Qty' in self.data.columns else 0
+            }
+
+        except Exception as e:
+            print(f"[사전분석] 핵심 분석 중 오류: {e}")
+
+        return analysis_results
 
     """범례 위젯에서 필터가 변경될 때 호출"""
-    def on_filter_changed_dict(self, filter_states):
-        # 현재 필터 상태 업데이트
-        if self.current_filter_states == filter_states:
+
+    def update_status_lines_only(self, filter_states):
+        """상태선만 효율적으로 업데이트 - 파이프라인 패턴으로 중복 제거"""
+        if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
             return
-        
-        # 상태선 업데이트만 수행하는 경량 버전 적용
-        self.current_filter_states = filter_states.copy()
-        self.update_status_lines_only(filter_states)
-        
-        # 필터 활성화 시 관련 분석 트리거
-        for status_type, is_checked in filter_states.items():
-            if is_checked and not self.current_filter_states.get(status_type, False):
-                # 새로 활성화된 필터에 대한 분석 요청
-                self.on_filter_activation_requested(status_type)
+
+        print(f"[파이프라인] 상태선 업데이트 시작 - {sum(1 for v in filter_states.values() if v)}개 필터 활성화")
+
+        try:
+            # ===== 1. 상태선 전용 파이프라인 생성 =====
+            from app.utils.filter_pipeline import PipelineTemplates
+            status_pipeline = PipelineTemplates.create_status_only_pipeline()
+
+            # ===== 2. 상태선 필터 설정 =====
+            status_filter = self.item_filter_factory.create_status_line_filter(filter_states)
+            status_pipeline.add_filter(status_filter, "상태선업데이트")
+
+            # ===== 3. 효율적인 업데이트 실행 =====
+            if hasattr(self, 'all_items') and self.all_items:
+                context = {
+                    'filter_states': filter_states,
+                    'mode': 'status_update_only',  # 상태선만 업데이트, 가시성 변경 없음
+                    'batch_update': True  # 배치 업데이트 모드
+                }
+
+                # 파이프라인 실행
+                status_pipeline.apply(self.all_items, context)
+
+                print(f"[파이프라인] 상태선 업데이트 완료 - {len(self.all_items)}개 아이템 처리")
+            else:
+                print("[파이프라인] 업데이트할 아이템이 없음")
+
+        except Exception as e:
+            print(f"[파이프라인] 상태선 업데이트 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
 
     """
     Line과 Time으로 데이터 그룹화하고 개별 아이템으로 표시
     """
 
     def update_ui_with_signals(self):
+        """새 데이터 로드 시 UI 업데이트 - 공통 로직 활용"""
         if self.data is None or 'Line' not in self.data.columns or 'Time' not in self.data.columns:
             EnhancedMessageBox.show_validation_error(self, "Grouping Failed",
                                                      "Data is missing or does not contain 'Line' or 'Time' columns.\nPlease load data with the required columns.")
             return
 
         try:
-            # 제조동 정보 추출 (Line 이름의 첫 글자가 제조동)
-            self.data['Building'] = self.data['Line'].str[0]  # 라인명의 첫 글자를 제조동으로 사용
+            print("[단순화] update_ui_with_signals 시작 - 새 데이터 로드 모드")
 
-            # 제조동별 생산량 계산 (정렬 목적)
-            building_production = self.data.groupby('Building')['Qty'].sum()
-
-            # 생산량 기준으로 제조동 정렬 (내림차순)
-            sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
-
-            # ---- 데이터프레임 정렬을 위한 전처리 ----
-            # 1. 제조동 정렬 순서 생성
-            building_order = {b: i for i, b in enumerate(sorted_buildings)}
-            self.data['Building_sort'] = self.data['Building'].apply(lambda x: building_order.get(x, 999))
-
-            # 2. 같은 제조동 내에서 라인명으로 정렬 (I_01 -> 01 형태로 변환)
-            self.data['Line_sort'] = self.data['Line'].apply(
-                lambda x: x.split('_')[1] if '_' in x else x
+            # ===== 1. 공통 UI 업데이트 실행 =====
+            success = self._update_ui_components(
+                data_df=self.data,
+                source="signals",
+                preserve_search=False,  # 새 데이터이므로 검색 상태 초기화
+                preserve_filters=False  # 새 데이터이므로 필터 상태 초기화
             )
 
-            # 3. 최종 정렬 적용 (제조동 순위 -> 라인명 -> 시간)
-            self.data = self.data.sort_values(by=['Building_sort', 'Line_sort', 'Time']).reset_index(drop=True)
+            if not success:
+                print("[단순화] UI 업데이트 실패")
+                return
 
-            # 4. 임시 정렬 컬럼 제거
-            self.data = self.data.drop(columns=['Building_sort', 'Line_sort'], errors='ignore')
+            # ===== 2. signals 모드만의 고유 작업들 =====
 
-            # 5. 원본 데이터도 정렬된 상태로 저장
+            # 원본 데이터 저장 (새 데이터이므로)
             self.original_data = self.data.copy()
-
-            # Line과 Time 값 추출
-            all_lines = self.data['Line'].unique()
-            times = sorted(self.data['Time'].unique())
-
-            # 제조동 별로 정렬된 라인 목록 생성 (각 제조동 내에서는 라인 이름 기준 오름차순으로 정렬)
-            lines = []
-            for building in sorted_buildings:
-                # 해당 제조동에 속하는 라인들 찾기
-                building_lines = [line for line in all_lines if line.startswith(building)]
-
-                # 라인 이름 기준 오름차순 정렬
-                sorted_building_lines = sorted(building_lines)
-
-                # 정렬된 라인 추가
-                lines.extend(sorted_building_lines)
-
-            # 교대 시간 구분
-            shifts = {}
-            for time in times:
-                if int(time) % 2 == 1:
-                    shifts[time] = "Day"
-                else:
-                    shifts[time] = "Night"
-
-            # 라인별 교대 정보
-            line_shifts = {}
-            for line in lines:
-                line_shifts[line] = ["Day", "Night"]
-
-            # 행 헤더
-            self.row_headers = []
-            for line in lines:
-                for shift in ["Day", "Night"]:
-                    self.row_headers.append(f"{line}_({shift})")
-
-            self.grid_widget.setupGrid(
-                rows=len(self.row_headers),
-                columns=len(self.days),
-                row_headers=self.row_headers,
-                column_headers=self.days,
-                line_shifts=line_shifts
-            )
-
-            # 데이터를 행/열별로 그룹화
-            grouped_items = {}  # 키: (row_idx, col_idx), 값: 아이템 목록
-
-            # 첫 번째 단계: 아이템을 행과 열 기준으로 그룹화
-            for _, row_data in self.data.iterrows():
-                if 'Line' not in row_data or 'Time' not in row_data or 'Item' not in row_data:
-                    continue
-
-                line = row_data['Line']
-                time = row_data['Time']
-                shift = shifts[time]
-                day_idx = (int(time) - 1) // 2
-
-                if day_idx >= len(self.days):
-                    continue
-
-                row_key = f"{line}_({shift})"
-
-                try:
-                    row_idx = self.row_headers.index(row_key)
-                    col_idx = day_idx
-
-                    # 키 생성 및 데이터 저장
-                    grid_key = (row_idx, col_idx)
-                    if grid_key not in grouped_items:
-                        grouped_items[grid_key] = []
-
-                    # 아이템 데이터 추가
-                    item_data = row_data.to_dict()
-                    qty = item_data.get('Qty', 0)
-                    if pd.isna(qty):
-                        qty = 0
-
-                    # 수량을 정수로 변환하여 저장
-                    item_data['Qty'] = int(float(qty)) if isinstance(qty, (int, float, str)) else 0
-                    grouped_items[grid_key].append(item_data)
-                except ValueError as e:
-                    print(f"인덱스 찾기 오류: {e}")
-                    continue
-
-            # 두 번째 단계: 아이템을 그리드에 추가
-            for (row_idx, col_idx), items in grouped_items.items():
-                for item_data in items:
-                    item_info = str(item_data.get('Item', ''))
-
-                    # Qty 표시
-                    qty = item_data.get('Qty', 0)
-                    if pd.notna(qty) and qty != 0:
-                        item_info += f"    {qty}"
-
-                    # 아이템 추가
-                    new_item = self.grid_widget.addItemAt(row_idx, col_idx, item_info, item_data)
-
-                    if new_item:
-                        item_code = item_data.get('Item', '')
-
-                        # 사전할당 아이템인 경우
-                        if item_code in self.pre_assigned_items:
-                            new_item.set_pre_assigned_status(True)
-
-                        # 출하 실패 아이템인 경우
-                        if item_code in self.shipment_failure_items:
-                            failure_info = self.shipment_failure_items[item_code]
-                            new_item.set_shipment_failure(True, failure_info.get('reason', 'Unknown reason'))
-
-                        # 자재부족 아이템인 경우
-                        if hasattr(self, 'current_shortage_items') and item_code in self.current_shortage_items:
-                            shortage_info = self.current_shortage_items[item_code]
-                            new_item.set_shortage_status(True, shortage_info)
+            print("[단순화] 원본 데이터 저장 완료")
 
             # 그룹화된 데이터 저장 (기존 코드 유지)
             if 'Day' in self.data.columns:
@@ -1680,36 +1968,16 @@ class ModifiedLeftSection(QWidget):
             # 데이터 변경 신호 발생
             df = self.extract_dataframe()
             self.viewDataChanged.emit(df)
+            print("[단순화] 데이터 변경 신호 발생")
 
-            # *** 중요: 필터 데이터를 그리드 설정 직후에 즉시 업데이트 ***
-            # 정렬된 라인 순서를 직접 전달
-            projects = []
-            if 'Project' in self.data.columns:
-                projects = [str(project) if not pd.isna(project) else "N/A" for project in self.data['Project']]
-                projects = sorted(set(projects))
+            # 필터 데이터 업데이트 (새 데이터이므로 필터 옵션 재설정)
+            self.update_filter_data()
+            print("[단순화] 필터 데이터 업데이트 완료")
 
-            # 디버그 출력
-            print(f"DEBUG: 그리드에서 정렬된 라인 순서: {lines}")
-            print(f"DEBUG: 필터 위젯에 전달할 라인 순서: {lines}")
-
-            # 필터 위젯에 정렬된 라인 순서 직접 설정 - 강제로 호출
-            if hasattr(self, 'filter_widget') and self.filter_widget:
-                print("DEBUG: 필터 위젯 존재 - 데이터 설정 중...")
-                self.filter_widget.set_filter_data(lines, projects)
-                print("DEBUG: 필터 위젯 데이터 설정 완료")
-            else:
-                print("DEBUG: 필터 위젯이 없습니다!")
-
-            # 추가로 직접 호출도 해보기
-            try:
-                self.update_filter_data()
-                print("DEBUG: update_filter_data 직접 호출 완료")
-            except Exception as e:
-                print(f"DEBUG: update_filter_data 호출 중 오류: {e}")
+            print("[단순화] update_ui_with_signals 완료")
 
         except Exception as e:
-            # 에러 메시지 표시
-            print(f"그룹핑 에러: {e}")
+            print(f"[단순화] update_ui_with_signals 오류: {e}")
             import traceback
             traceback.print_exc()
             EnhancedMessageBox.show_validation_error(self, "Grouping Error",
@@ -1718,10 +1986,46 @@ class ModifiedLeftSection(QWidget):
     """
     외부에서 데이터 설정
     """
+
     def set_data_from_external(self, new_data):
-        self.data = self._normalize_data_types(new_data.copy())
-        self.original_data = self.data.copy()
-        self.update_table_from_data()
+        """외부에서 데이터 설정 - 공통 로직 활용"""
+        print("[단순화] set_data_from_external 호출")
+
+        try:
+            # ===== 1. 데이터 정규화 =====
+            self.data = self._normalize_data_types(new_data.copy())
+            self.original_data = self.data.copy()
+
+            # ===== 2. 공통 UI 업데이트 실행 =====
+            success = self._update_ui_components(
+                data_df=self.data,
+                source="external",
+                preserve_search=False,  # 외부 데이터이므로 검색 상태 초기화
+                preserve_filters=False  # 외부 데이터이므로 필터 상태 초기화
+            )
+
+            if not success:
+                print("[단순화] 외부 데이터 설정 실패")
+                return
+
+            # ===== 3. external 모드만의 고유 작업들 =====
+
+            # 데이터 변경 신호 발생
+            df = self.extract_dataframe()
+            self.viewDataChanged.emit(df)
+
+            # 사전 분석 실행
+            self.preload_analyses()
+
+            # 출하 분석 트리거
+            self.trigger_shipment_analysis()
+
+            print("[단순화] set_data_from_external 완료")
+
+        except Exception as e:
+            print(f"[단순화] set_data_from_external 오류: {e}")
+            import traceback
+            traceback.print_exc()
 
     """
     원본 데이터로 되돌리기
@@ -1775,104 +2079,83 @@ class ModifiedLeftSection(QWidget):
     현재 자재부족 아이템 정보 저장
     """
     def set_current_shortage_items(self, shortage_items):
+        """
+        현재 자재부족 아이템 정보 저장
+        ✅ 수정: update_left_widget_shortage_status() → apply_all_states() 호출
+        """
         # 자재 부족 정보 저장
         self.current_shortage_items = shortage_items
-        
-        # 시프트 기반으로 자재 부족 상태 적용
-        self.update_left_widget_shortage_status(shortage_items)
 
-    """
-    왼쪽 위젯의 아이템들에 자재 부족 상태 적용
+        # ✅ 수정: 개별 메서드 대신 통합 상태 적용 메서드 사용
+        self.apply_all_states()
 
-    Args:
-        shortage_dict: {item_code: [{shift: shift_num, material: material_code, shortage: shortage_amt}]}
-    """
-    def update_left_widget_shortage_status(self, shortage_dict):
-        if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
-            return
-        
-        print(f"자재 부족 상태 적용 시작: {len(shortage_dict)}개 아이템")
-        status_applied_count = 0
-        
-        # 그리드의 모든 컨테이너 순회
-        for row_containers in self.grid_widget.containers:
-            for container in row_containers:
-                # 각 컨테이너의 아이템들 순회
-                for item in container.items:
-                    if hasattr(item, 'item_data') and item.item_data and 'Item' in item.item_data:
-                        item_code = item.item_data['Item']
-                        item_time = item.item_data.get('Time')  # 시프트(Time) 정보 가져오기
-                        
-                        # 해당 아이템이 자재 부족 목록에 있는지 확인
-                        if item_code in shortage_dict:
-                            # 시프트별 부족 정보 검사
-                            shortages_for_item = shortage_dict[item_code]
-                            matching_shortages = []
-                            
-                            for shortage in shortages_for_item:
-                                shortage_shift = shortage.get('shift')
-                                
-                                # 시프트가 일치하면 부족 정보 저장
-                                if shortage_shift and item_time and int(shortage_shift) == int(item_time):
-                                    matching_shortages.append(shortage)
-                            
-                            # 일치하는 시프트의 부족 정보가 있으면 부족 상태로 설정
-                            if matching_shortages:
-                                item.set_shortage_status(True, matching_shortages)
-                                status_applied_count += 1
-                            else:
-                                item.set_shortage_status(False)
-                        else:
-                            # 부족 목록에 없는 경우 부족 상태 해제
-                            item.set_shortage_status(False)
-        
-        print(f"자재 부족 상태 적용 완료: {status_applied_count}개 아이템에 적용됨")
+        print(f"자재 부족 상태 적용 완료: {len(shortage_items)}개 아이템")
+
 
     """
     모든 상태 정보를 현재 아이템들에 적용
     """
+
     def apply_all_states(self):
+        """
+        모든 상태 정보를 현재 아이템들에 적용
+        ✅ 개선: 효율적인 일괄 처리로 성능 향상
+        """
         if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
             return
-        
+
+        print("[상태적용] 모든 아이템에 상태 정보 적용 시작")
+        applied_count = {'pre_assigned': 0, 'shipment_failure': 0, 'shortage': 0}
+
         for row_containers in self.grid_widget.containers:
             for container in row_containers:
                 for item in container.items:
-                    if hasattr(item, 'item_data') and item.item_data and 'Item' in item.item_data:
-                        item_code = item.item_data['Item']
-                        item_time = item.item_data.get('Time')
+                    if not hasattr(item, 'item_data') or not item.item_data or 'Item' not in item.item_data:
+                        continue
 
-                        # 사전할당 상태
-                        if item_code in self.pre_assigned_items:
-                            item.set_pre_assigned_status(True)
+                    item_code = item.item_data['Item']
+                    item_time = item.item_data.get('Time')
 
-                        # 출하 실패 상태
-                        if item_code in self.shipment_failure_items:
-                            failure_info = self.shipment_failure_items[item_code]
-                            item.set_shipment_failure(True, failure_info.get('reason', 'Unknown'))
+                    # 사전할당 상태
+                    if item_code in self.pre_assigned_items:
+                        item.set_pre_assigned_status(True)
+                        applied_count['pre_assigned'] += 1
 
-                        # 자재 부족 상태 - 시프트별 체크 적용
-                        if hasattr(self, 'current_shortage_items') and item_code in self.current_shortage_items:
-                            shortages = self.current_shortage_items[item_code]
-                            matching_shortages = []
-                            
-                            # 시프트별 부족 정보 검사
-                            for shortage in shortages:
-                                shortage_shift = shortage.get('shift')
-                                
-                                # 시프트가 일치하는 경우만 처리
-                                if shortage_shift and item_time and int(shortage_shift) == int(item_time):
-                                    matching_shortages.append(shortage)
-                            
-                            # 일치하는 시프트의 부족 정보가 있으면 부족 상태로 설정
-                            if matching_shortages:
-                                item.set_shortage_status(True, matching_shortages)
-                            else:
-                                item.set_shortage_status(False)
+                    # 출하 실패 상태
+                    if item_code in self.shipment_failure_items:
+                        failure_info = self.shipment_failure_items[item_code]
+                        item.set_shipment_failure(True, failure_info.get('reason', 'Unknown'))
+                        applied_count['shipment_failure'] += 1
+
+                    # 자재 부족 상태 - 시프트별 체크 적용
+                    if hasattr(self, 'current_shortage_items') and item_code in self.current_shortage_items:
+                        shortages = self.current_shortage_items[item_code]
+                        matching_shortages = []
+
+                        # 시프트별 부족 정보 검사
+                        for shortage in shortages:
+                            shortage_shift = shortage.get('shift')
+
+                            # 시프트가 일치하는 경우만 처리
+                            if shortage_shift and item_time and int(shortage_shift) == int(item_time):
+                                matching_shortages.append(shortage)
+
+                        # 일치하는 시프트의 부족 정보가 있으면 부족 상태로 설정
+                        if matching_shortages:
+                            item.set_shortage_status(True, matching_shortages)
+                            applied_count['shortage'] += 1
+                        else:
+                            item.set_shortage_status(False)
+                    else:
+                        item.set_shortage_status(False)
+
+        print(f"[상태적용] 완료 - 사전할당: {applied_count['pre_assigned']}, "
+              f"출하실패: {applied_count['shipment_failure']}, 자재부족: {applied_count['shortage']}")
 
     def apply_filters_safely(self):
         """
         안전한 필터 적용 - 드래그앤드롭 후 호출
+        ✅ 수정: apply_standard_filters() → apply_all_filters() 호출
         """
         try:
             # 현재 데이터가 있는지 확인
@@ -1880,8 +2163,8 @@ class ModifiedLeftSection(QWidget):
                 print("DEBUG: 데이터가 없어서 필터 적용 스킵")
                 return
 
-            # 범례 필터만 적용 (엑셀 필터는 건드리지 않음)
-            self.apply_legend_filters_only()
+            # ✅ 수정: 통합된 필터 적용 메서드 사용
+            self.apply_all_filters()
 
             # 검색이 활성화된 경우에만 검색 상태 복원
             if hasattr(self, 'search_widget') and self.search_widget.is_search_active():
@@ -1913,50 +2196,42 @@ class ModifiedLeftSection(QWidget):
     """
     상태선만 효율적으로 업데이트 (가시성은 변경하지 않음)
     """
+
     def update_status_lines_only(self, filter_states):
+        """상태선만 효율적으로 업데이트 - 파이프라인 패턴으로 중복 제거"""
         if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
             return
-        
-        # 변경된 아이템 추적
-        changed_items = []
-        
-        # 필터 상태 캐싱
-        shortage_filter = filter_states.get('shortage', False)
-        shipment_filter = filter_states.get('shipment', False)
-        pre_assigned_filter = filter_states.get('pre_assigned', False)
-        
-        # 아이템 순회하며 상태선 업데이트
-        for row_containers in self.grid_widget.containers:
-            for container in row_containers:
-                for item in container.items:
-                    changed = False
-                    
-                    # 각 상태선 확인 및 변경
-                    if hasattr(item, 'show_shortage_line'):
-                        new_state = shortage_filter and item.is_shortage
-                        if item.show_shortage_line != new_state:
-                            item.show_shortage_line = new_state
-                            changed = True
-                            
-                    if hasattr(item, 'show_shipment_line'):
-                        new_state = shipment_filter and item.is_shipment_failure
-                        if item.show_shipment_line != new_state:
-                            item.show_shipment_line = new_state
-                            changed = True
-                            
-                    if hasattr(item, 'show_pre_assigned_line'):
-                        new_state = pre_assigned_filter and item.is_pre_assigned
-                        if item.show_pre_assigned_line != new_state:
-                            item.show_pre_assigned_line = new_state
-                            changed = True
-                    
-                    # 변경된 아이템만 업데이트 대상에 추가
-                    if changed:
-                        changed_items.append(item)
-        
-        # 변경된 아이템만 일괄 업데이트
-        for item in changed_items:
-            item.update()
+
+        print(f"[파이프라인] 상태선 업데이트 시작 - {sum(1 for v in filter_states.values() if v)}개 필터 활성화")
+
+        try:
+            # ===== 1. 상태선 전용 파이프라인 생성 =====
+            from app.utils.filter_pipeline import PipelineTemplates
+            status_pipeline = PipelineTemplates.create_status_only_pipeline()
+
+            # ===== 2. 상태선 필터 설정 =====
+            status_filter = self.item_filter_factory.create_status_line_filter(filter_states)
+            status_pipeline.add_filter(status_filter, "상태선업데이트")
+
+            # ===== 3. 효율적인 업데이트 실행 =====
+            if hasattr(self, 'all_items') and self.all_items:
+                context = {
+                    'filter_states': filter_states,
+                    'mode': 'status_update_only',  # 상태선만 업데이트, 가시성 변경 없음
+                    'batch_update': True  # 배치 업데이트 모드
+                }
+
+                # 파이프라인 실행
+                status_pipeline.apply(self.all_items, context)
+
+                print(f"[파이프라인] 상태선 업데이트 완료 - {len(self.all_items)}개 아이템 처리")
+            else:
+                print("[파이프라인] 업데이트할 아이템이 없음")
+
+        except Exception as e:
+            print(f"[파이프라인] 상태선 업데이트 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
             
     """
     현재 필터 상태에 따라 아이템 가시성 조정
@@ -2008,25 +2283,28 @@ class ModifiedLeftSection(QWidget):
     """
     아이템 삭제 처리 메서드 (ItemContainer에서 발생한 삭제를 처리)
     """
+
     def on_item_removed(self, item_or_id):
-        # MVC 컨트롤러 확인
-        has_controller = hasattr(self, 'controller') and self.controller is not None
-        
+        """아이템 삭제 처리 - 검색 인덱스 무효화 추가"""
+        # ===== 검색 인덱스 무효화 =====
+        self.search_index_manager.mark_dirty()
+        print(f"[최적화] 아이템 삭제로 검색 인덱스 무효화")
+
         # MVC 컨트롤러가 있으면 컨트롤러에서 처리
-        if has_controller:
-            # 컨트롤러에 연결이 제대로 되어 있는지 확인
+        if self._mvc_mode and hasattr(self, 'controller') and self.controller:
+            print("ModifiedLeftSection: MVC 모드 - 컨트롤러로 삭제 처리")
             if hasattr(self.controller, 'on_item_deleted'):
                 self.controller.on_item_deleted(item_or_id)
                 self.trigger_shipment_analysis()
                 return
             else:
                 print("DEBUG: 컨트롤러에 on_item_deleted 메서드가 없음")
-        
+
         # 컨트롤러가 없거나 처리하지 않은 경우 기존 로직 사용
         if self.data is None:
             print("DEBUG: 데이터가 없음")
             return
-        
+
         # item_or_id가 문자열(ID)인 경우
         if isinstance(item_or_id, str):
             item_id = item_or_id
@@ -2037,12 +2315,11 @@ class ModifiedLeftSection(QWidget):
                 df = self.extract_dataframe()
                 self.viewDataChanged.emit(df)
                 self.mark_as_modified()
-
                 self.trigger_shipment_analysis()
             else:
                 print(f"DEBUG: ID {item_id}로 아이템을 찾을 수 없음")
             return
-        
+
         # item_or_id가 아이템 객체인 경우
         if hasattr(item_or_id, 'item_data') and item_or_id.item_data:
             # ID가 있으면 ID로 찾기
@@ -2056,7 +2333,7 @@ class ModifiedLeftSection(QWidget):
                     self.viewDataChanged.emit(df)
                     self.mark_as_modified()
                     return
-            
+
             # ID가 없으면 Line/Time/Item으로 찾기
             line, time, item_code = ItemKeyManager.get_item_from_data(item_or_id.item_data)
             if line is not None and time is not None and item_code is not None:
@@ -2076,7 +2353,7 @@ class ModifiedLeftSection(QWidget):
         df = self.extract_dataframe()
         self.viewDataChanged.emit(df)
         self.mark_as_modified()
-        
+
         # 출하 분석 업데이트 요청
         self.trigger_shipment_analysis()
 
@@ -2095,220 +2372,73 @@ class ModifiedLeftSection(QWidget):
     """
 
     def update_from_model(self, model_df=None):
+        """모델로부터 UI 업데이트 - 공통 로직 활용"""
         print("ModifiedLeftSection: update_from_model 호출")
 
-        current_selected_item_id = None
-        if self.current_selected_item and hasattr(self.current_selected_item, 'item_data'):
-            current_selected_item_id = self.current_selected_item.item_data.get('_id')
-
-        # ... UI 업데이트 ...
-
-        # 선택된 아이템으로 스크롤 복원
-        if current_selected_item_id:
-            QTimer.singleShot(100, lambda: self._scroll_to_selected_item(current_selected_item_id))
-
-        # 현재 검색 및 필터 상태 백업
-        current_search_active = self.search_widget.is_search_active()
-        current_search_text = self.search_widget.get_search_text()
-        current_filter_states = self.current_filter_states.copy()
-        current_excel_filter_states = self.current_excel_filter_states.copy()
-
-        # 현재 스크롤 위치 저장
-        current_scroll_position = None
-        if hasattr(self.grid_widget, 'scroll_area'):
-            current_scroll_position = {
-                'horizontal': self.grid_widget.scroll_area.horizontalScrollBar().value(),
-                'vertical': self.grid_widget.scroll_area.verticalScrollBar().value()
-            }
-            print(f"현재 스크롤 위치 저장: {current_scroll_position}")
-
-        # 매개변수가 없을 때 컨트롤러에서 데이터 가져오기
-        if model_df is None:
-            if hasattr(self, 'controller') and self.controller:
-                model_df = self.controller.model.get_dataframe()
-                print("컨트롤러에서 데이터 가져옴")
-
-        if model_df is None:
-            print("데이터가 없습니다.")
-            return
-
-        # 타입 변환을 한 번에 처리
-        self.data = self._normalize_data_types(model_df.copy())
-
-        # UI 업데이트 시작
-        if self.data is None or 'Line' not in self.data.columns or 'Time' not in self.data.columns:
-            print("데이터가 없거나 필수 컬럼이 없음")
-            return
+        if not self._mvc_mode:
+            print("WARNING: 레거시 모드에서 update_from_model이 호출됨 - 하지만 처리 계속")
 
         try:
-            # 정렬 로직 적용 (update_ui_with_signals와 동일한 로직)
-            # 제조동 정보 추출 (Line 이름의 첫 글자가 제조동)
-            self.data['Building'] = self.data['Line'].str[0]  # 라인명의 첫 글자를 제조동으로 사용
-
-            # 제조동별 생산량 계산 (정렬 목적)
-            building_production = self.data.groupby('Building')['Qty'].sum()
-
-            # 생산량 기준으로 제조동 정렬 (내림차순)
-            sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
-
-            # ---- 데이터프레임 정렬을 위한 전처리 ----
-            # 1. 제조동 정렬 순서 생성
-            building_order = {b: i for i, b in enumerate(sorted_buildings)}
-            self.data['Building_sort'] = self.data['Building'].apply(lambda x: building_order.get(x, 999))
-
-            # 2. 같은 제조동 내에서 라인명으로 정렬 (I_01 -> 01 형태로 변환)
-            self.data['Line_sort'] = self.data['Line'].apply(
-                lambda x: x.split('_')[1] if '_' in x else x
-            )
-
-            # 3. 최종 정렬 적용 (제조동 순위 -> 라인명 -> 시간)
-            self.data = self.data.sort_values(by=['Building_sort', 'Line_sort', 'Time']).reset_index(drop=True)
-
-            # 4. 임시 정렬 컬럼 제거
-            self.data = self.data.drop(columns=['Building_sort', 'Line_sort'], errors='ignore')
-
-            # 기존 아이템 모두 지우기
-            self.clear_all_items()
-
-            # Line과 Time 값 추출
-            lines = []
-            for building in sorted_buildings:
-                # 해당 제조동에 속하는 라인들 찾기
-                building_lines = [line for line in self.data['Line'].unique() if line.startswith(building)]
-                # 라인 이름 기준 오름차순 정렬
-                sorted_building_lines = sorted(building_lines)
-                # 정렬된 라인 추가
-                lines.extend(sorted_building_lines)
-
-            times = sorted(self.data['Time'].unique())
-
-            # 교대 시간 구분
-            shifts = {}
-            for time in times:
-                if int(time) % 2 == 1:
-                    shifts[time] = "Day"
+            # ===== 1. 모델 데이터 가져오기 =====
+            if model_df is None:
+                if hasattr(self, 'controller') and self.controller:
+                    model_df = self.controller.model.get_dataframe()
+                    print("[단순화] 컨트롤러에서 데이터 가져옴")
                 else:
-                    shifts[time] = "Night"
+                    print("[단순화] 모델 데이터가 없습니다.")
+                    return
 
-            # 라인별 교대 정보
-            line_shifts = {}
-            for line in lines:
-                line_shifts[line] = ["Day", "Night"]
+            if model_df is None:
+                print("[단순화] 데이터가 없습니다.")
+                return
 
-            # 행 헤더
-            self.row_headers = []
-            for line in lines:
-                for shift in ["Day", "Night"]:
-                    self.row_headers.append(f"{line}_({shift})")
-
-            # 그리드 설정
-            self.grid_widget.setupGrid(
-                rows=len(self.row_headers),
-                columns=len(self.days),
-                row_headers=self.row_headers,
-                column_headers=self.days,
-                line_shifts=line_shifts
+            # ===== 2. 공통 UI 업데이트 실행 =====
+            success = self._update_ui_components(
+                data_df=model_df,
+                source="model",
+                preserve_search=True,  # 모델 변경이므로 검색 상태 보존
+                preserve_filters=True  # 모델 변경이므로 필터 상태 보존
             )
 
-            # 데이터에서 아이템 생성하여 그리드에 배치
-            for _, row_data in self.data.iterrows():
-                if 'Line' not in row_data or 'Time' not in row_data:
-                    continue
+            if not success:
+                print("[단순화] UI 업데이트 실패")
+                return
 
-                line = row_data['Line']
-                time = row_data['Time']
-                shift = shifts[time]
-                day_idx = (int(time) - 1) // 2
+            # ===== 3. model 모드만의 고유 작업들 =====
 
-                if day_idx >= len(self.days):
-                    continue
-
-                day = self.days[day_idx]
-                row_key = f"{line}_({shift})"
-
-                # Item 정보가 있으면 추출하여 저장
-                if 'Item' in row_data and pd.notna(row_data['Item']):
-                    item_info = str(row_data['Item'])
-
-                    # MFG 정보가 있으면 수량 정보로 추가
-                    if 'Qty' in row_data and pd.notna(row_data['Qty']):
-                        item_info += f"    {row_data['Qty']}"
-
-                    try:
-                        # 그리드에 아이템 추가
-                        row_idx = self.row_headers.index(row_key)
-                        col_idx = day_idx
-
-                        # 전체 행 데이터를 아이템 데이터(dict 형태)로 전달
-                        item_full_data = row_data.to_dict()
-                        new_item = self.grid_widget.addItemAt(row_idx, col_idx, item_info, item_full_data)
-
-                        if new_item:
-                            item_code = item_full_data.get('Item', '')
-
-                            # 사전할당 아이템인 경우
-                            if item_code in self.pre_assigned_items:
-                                new_item.set_pre_assigned_status(True)
-
-                            # 출하 실패 아이템인 경우
-                            if item_code in self.shipment_failure_items:
-                                failure_info = self.shipment_failure_items[item_code]
-                                new_item.set_shipment_failure(True, failure_info.get('reason', 'Unknown reason'))
-
-                            # 자재부족 아이템인 경우
-                            if hasattr(self, 'current_shortage_items') and item_code in self.current_shortage_items:
-                                shortage_info = self.current_shortage_items[item_code]
-                                new_item.set_shortage_status(True, shortage_info)
-
-                    except ValueError as e:
-                        print(f"인덱스 찾기 오류: {e}")
-
-            # 스크롤 위치 복원
-            if current_scroll_position and hasattr(self.grid_widget, 'scroll_area'):
-                QTimer.singleShot(50, lambda: self._restore_scroll_position(current_scroll_position))
-
-            # 저장했던 필터 및 검색 상태 복원
-            self.current_filter_states = current_filter_states
-            self.current_excel_filter_states = current_excel_filter_states
-
-            # 필터 상태 즉시 재적용
-            if any(v for k, v in self.current_filter_states.items()):
-                self.apply_all_filters()
-                
-            # 검색이 활성화되었던 경우 검색 상태 복원
-            if current_search_active and current_search_text:
-                # SearchWidget 상태 복원
-                self.search_widget.last_search_text = current_search_text
-                self.search_widget.search_active = True
-                self.search_widget.clear_button.setEnabled(True)
-                
-                # 검색 실행
-                self.search_items(current_search_text)
-
-            # 출하 분석도 즉시 업데이트
+            # 출하 분석 즉시 업데이트 (모델 변경 후 분석 갱신)
             self.trigger_shipment_analysis()
+            print("[단순화] 출하 분석 업데이트 요청")
+
+            print("[단순화] update_from_model 완료")
 
         except Exception as e:
-            print(f"UI 업데이트 오류: {e}")
+            print(f"[단순화] update_from_model 오류: {e}")
             import traceback
             traceback.print_exc()
 
     """
     복사된 아이템 처리
     """
+
     def on_item_copied(self, item, data):
+        """복사된 아이템 처리 - 모드별 분기"""
+        print("ModifiedLeftSection: on_item_copied 호출됨")
+
         # 아이템 등록
         self.register_item(item)
 
-        # 데이터 처리는 제거 - 이미 컨트롤러에서 처리함
-        # MVC 패턴에서는 뷰는 UI 렌더링만 담당, 데이터 처리는 컨트롤러에서
-        
-        # 컨트롤러가 없는 경우에만 직접 처리
-        if not hasattr(self, 'controller') or not self.controller:
-            # 컨트롤러가 없는 경우 기본 처리 - 레거시 지원
+        # MVC 모드와 레거시 모드 분기
+        if self._mvc_mode and hasattr(self, 'controller') and self.controller:
+            print("ModifiedLeftSection: MVC 모드 - 컨트롤러로 복사 처리")
+            # MVC 패턴에서는 뷰는 UI 렌더링만 담당, 데이터 처리는 컨트롤러에서
+            # 데이터 처리는 이미 컨트롤러에서 완료되었으므로 추가 처리 불필요
+            return
+        else:
+            print("ModifiedLeftSection: 레거시 모드 - 직접 복사 처리")
+            # 레거시 모드: 직접 데이터 처리
             df = self.extract_dataframe()
             self.viewDataChanged.emit(df)
-
             self.trigger_shipment_analysis()
 
     """
@@ -2450,3 +2580,294 @@ class ModifiedLeftSection(QWidget):
                     break
         except Exception as e:
             print(f"강제 스크롤 중 오류 발생: {str(e)}")
+
+    def _update_ui_components(self, data_df, source="unknown", preserve_search=True, preserve_filters=True):
+        """
+        공통 UI 업데이트 메서드 - 중복 로직 통합 + 헬퍼 메서드 활용
+
+        Args:
+            data_df: 업데이트할 데이터프레임
+            source: 호출 소스 ("signals", "model", "external")
+            preserve_search: 검색 상태 보존 여부
+            preserve_filters: 필터 상태 보존 여부
+        """
+        if data_df is None or 'Line' not in data_df.columns or 'Time' not in data_df.columns:
+            print(f"[UI업데이트] {source}에서 호출 - 데이터가 없거나 필수 컬럼 누락")
+            return False
+
+        try:
+            print(f"[UI업데이트] {source}에서 UI 업데이트 시작 - {len(data_df)}행")
+
+            # ===== 1. 검색 인덱스 무효화 =====
+            self.search_index_manager.mark_dirty()
+            print(f"[최적화] {source} UI 재구성으로 검색 인덱스 무효화")
+
+            # ===== 2. 상태 백업 (preserve 옵션에 따라) =====
+            backup_data = self._backup_ui_state(preserve_search, preserve_filters)
+
+            # ===== 3. 데이터 정규화 및 정렬 =====
+            self.data = self._normalize_data_types(data_df.copy())
+            self._sort_data_by_building()
+
+            # ===== 4. 기존 아이템 정리 =====
+            self.clear_all_items()
+            print(f"[UI업데이트] 기존 아이템 정리 완료")
+
+            # ===== 5. 그리드 설정 =====
+            lines, line_shifts, row_headers = self._prepare_grid_structure()
+
+            self.grid_widget.setupGrid(
+                rows=len(row_headers),
+                columns=len(self.days),
+                row_headers=row_headers,
+                column_headers=self.days,
+                line_shifts=line_shifts
+            )
+
+            # ===== 6. 아이템 생성 및 배치 =====
+            item_count = self._populate_grid_with_items()
+
+            # ===== 7. 상태 복원 =====
+            self._restore_ui_state(backup_data, preserve_search, preserve_filters)
+
+            print(f"[UI업데이트] {source} UI 업데이트 완료 - 총 {item_count}개 아이템")
+            return True
+
+        except Exception as e:
+            print(f"[UI업데이트] {source} UI 업데이트 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _sort_data_by_building(self):
+        """데이터를 제조동별로 정렬하는 헬퍼 메서드"""
+        try:
+            # 제조동 정보 추출 (Line 이름의 첫 글자가 제조동)
+            self.data['Building'] = self.data['Line'].str[0]
+
+            # 제조동별 생산량 계산 (정렬 목적)
+            building_production = self.data.groupby('Building')['Qty'].sum()
+
+            # 생산량 기준으로 제조동 정렬 (내림차순)
+            sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
+
+            # 1. 제조동 정렬 순서 생성
+            building_order = {b: i for i, b in enumerate(sorted_buildings)}
+            self.data['Building_sort'] = self.data['Building'].apply(lambda x: building_order.get(x, 999))
+
+            # 2. 같은 제조동 내에서 라인명으로 정렬 (I_01 -> 01 형태로 변환)
+            self.data['Line_sort'] = self.data['Line'].apply(
+                lambda x: x.split('_')[1] if '_' in x else x
+            )
+
+            # 3. 최종 정렬 적용 (제조동 순위 -> 라인명 -> 시간)
+            self.data = self.data.sort_values(by=['Building_sort', 'Line_sort', 'Time']).reset_index(drop=True)
+
+            # 4. 임시 정렬 컬럼 제거
+            self.data = self.data.drop(columns=['Building_sort', 'Line_sort'], errors='ignore')
+
+            print(f"[헬퍼] 제조동별 정렬 완료 - {len(sorted_buildings)}개 제조동: {sorted_buildings}")
+            return sorted_buildings
+
+        except Exception as e:
+            print(f"[헬퍼] 제조동 정렬 중 오류: {e}")
+            return []
+
+    def _prepare_grid_structure(self):
+        """그리드 구조 준비 헬퍼 메서드"""
+        try:
+            # 정렬된 라인 목록 생성
+            sorted_buildings = self.data['Building'].unique()
+            building_production = self.data.groupby('Building')['Qty'].sum()
+            sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
+
+            lines = []
+            for building in sorted_buildings:
+                # 해당 제조동에 속하는 라인들 찾기
+                building_lines = [line for line in self.data['Line'].unique() if line.startswith(building)]
+                # 라인 이름 기준 오름차순 정렬
+                sorted_building_lines = sorted(building_lines)
+                lines.extend(sorted_building_lines)
+
+            # 교대 시간 구분
+            times = sorted(self.data['Time'].unique())
+            shifts = {}
+            for time in times:
+                if int(time) % 2 == 1:
+                    shifts[time] = "Day"
+                else:
+                    shifts[time] = "Night"
+
+            # 라인별 교대 정보
+            line_shifts = {}
+            for line in lines:
+                line_shifts[line] = ["Day", "Night"]
+
+            # 행 헤더 생성
+            row_headers = []
+            for line in lines:
+                for shift in ["Day", "Night"]:
+                    row_headers.append(f"{line}_({shift})")
+
+            # 클래스 변수에 저장
+            self.row_headers = row_headers
+
+            print(f"[헬퍼] 그리드 구조 준비 완료 - {len(lines)}개 라인, {len(row_headers)}개 행")
+            return lines, line_shifts, row_headers
+
+        except Exception as e:
+            print(f"[헬퍼] 그리드 구조 준비 중 오류: {e}")
+            return [], {}, []
+
+    def _populate_grid_with_items(self):
+        """그리드에 아이템들을 배치하는 헬퍼 메서드"""
+        try:
+            # 교대 시간 구분 재생성
+            times = sorted(self.data['Time'].unique())
+            shifts = {}
+            for time in times:
+                if int(time) % 2 == 1:
+                    shifts[time] = "Day"
+                else:
+                    shifts[time] = "Night"
+
+            # 데이터에서 아이템 생성하여 그리드에 배치
+            item_count = 0
+            for _, row_data in self.data.iterrows():
+                if 'Line' not in row_data or 'Time' not in row_data:
+                    continue
+
+                line = row_data['Line']
+                time = row_data['Time']
+                shift = shifts[time]
+                day_idx = (int(time) - 1) // 2
+
+                if day_idx >= len(self.days):
+                    continue
+
+                row_key = f"{line}_({shift})"
+
+                # Item 정보가 있으면 추출하여 저장
+                if 'Item' in row_data and pd.notna(row_data['Item']):
+                    item_info = str(row_data['Item'])
+
+                    # Qty 정보가 있으면 수량 정보로 추가
+                    if 'Qty' in row_data and pd.notna(row_data['Qty']):
+                        item_info += f"    {row_data['Qty']}"
+
+                    try:
+                        # 그리드에 아이템 추가
+                        row_idx = self.row_headers.index(row_key)
+                        col_idx = day_idx
+
+                        # 전체 행 데이터를 아이템 데이터(dict 형태)로 전달
+                        item_full_data = row_data.to_dict()
+                        new_item = self.grid_widget.addItemAt(row_idx, col_idx, item_info, item_full_data)
+
+                        if new_item:
+                            # 새 아이템을 all_items에 추가
+                            self.all_items.append(new_item)
+                            item_count += 1
+
+                            # 상태 적용
+                            self._apply_item_states(new_item, item_full_data)
+
+                    except ValueError as e:
+                        print(f"[헬퍼] 인덱스 찾기 오류: {e}")
+                        continue
+
+            print(f"[헬퍼] 그리드 아이템 배치 완료 - {item_count}개 아이템 생성")
+            return item_count
+
+        except Exception as e:
+            print(f"[헬퍼] 그리드 아이템 배치 중 오류: {e}")
+            return 0
+
+    def _apply_item_states(self, new_item, item_data):
+        """아이템에 상태 적용하는 헬퍼 메서드"""
+        try:
+            item_code = item_data.get('Item', '')
+
+            # 사전할당 아이템인 경우
+            if item_code in self.pre_assigned_items:
+                new_item.set_pre_assigned_status(True)
+
+            # 출하 실패 아이템인 경우
+            if item_code in self.shipment_failure_items:
+                failure_info = self.shipment_failure_items[item_code]
+                new_item.set_shipment_failure(True, failure_info.get('reason', 'Unknown reason'))
+
+            # 자재부족 아이템인 경우
+            if hasattr(self, 'current_shortage_items') and item_code in self.current_shortage_items:
+                shortage_info = self.current_shortage_items[item_code]
+                new_item.set_shortage_status(True, shortage_info)
+
+        except Exception as e:
+            print(f"[헬퍼] 아이템 상태 적용 중 오류: {e}")
+
+    def _backup_ui_state(self, preserve_search, preserve_filters):
+        """UI 상태 백업 헬퍼 메서드"""
+        backup_data = {
+            'search_active': False,
+            'search_text': "",
+            'filter_states': {},
+            'excel_filter_states': {},
+            'scroll_position': None,
+            'selected_item_id': None
+        }
+
+        if preserve_search and hasattr(self, 'search_widget'):
+            backup_data['search_active'] = self.search_widget.is_search_active()
+            backup_data['search_text'] = self.search_widget.get_search_text()
+
+        if preserve_filters:
+            backup_data['filter_states'] = self.current_filter_states.copy()
+            backup_data['excel_filter_states'] = self.current_excel_filter_states.copy()
+
+        # 선택된 아이템 ID 백업
+        if self.current_selected_item and hasattr(self.current_selected_item, 'item_data'):
+            backup_data['selected_item_id'] = self.current_selected_item.item_data.get('_id')
+
+        # 스크롤 위치 백업
+        if hasattr(self.grid_widget, 'scroll_area'):
+            backup_data['scroll_position'] = {
+                'horizontal': self.grid_widget.scroll_area.horizontalScrollBar().value(),
+                'vertical': self.grid_widget.scroll_area.verticalScrollBar().value()
+            }
+
+        return backup_data
+
+    def _restore_ui_state(self, backup_data, preserve_search, preserve_filters):
+        """
+        UI 상태 복원 헬퍼 메서드
+        ✅ 수정: apply_standard_filters() → apply_all_filters() 호출
+        """
+        try:
+            # 필터 상태 복원
+            if preserve_filters:
+                self.current_filter_states = backup_data['filter_states']
+                self.current_excel_filter_states = backup_data['excel_filter_states']
+
+            # 스크롤 위치 복원
+            if backup_data['scroll_position'] and hasattr(self.grid_widget, 'scroll_area'):
+                QTimer.singleShot(50, lambda: self._restore_scroll_position(backup_data['scroll_position']))
+
+            # 검색 상태 복원
+            if preserve_search and backup_data['search_active'] and backup_data['search_text']:
+                self.search_widget.last_search_text = backup_data['search_text']
+                self.search_widget.search_active = True
+                self.search_widget.clear_button.setEnabled(True)
+
+                print(f"[UI업데이트] 검색 상태 복원: '{backup_data['search_text']}'")
+                QTimer.singleShot(100, lambda: self.search_items(backup_data['search_text']))
+
+            # ✅ 수정: 필터 재적용 시 통합된 메서드 사용
+            if preserve_filters and any(v for v in backup_data['filter_states'].values()):
+                QTimer.singleShot(50, lambda: self.apply_all_filters())
+
+            # 선택된 아이템 복원
+            if backup_data['selected_item_id']:
+                QTimer.singleShot(150, lambda: self._scroll_to_selected_item(backup_data['selected_item_id']))
+
+        except Exception as e:
+            print(f"[UI업데이트] 상태 복원 중 오류: {e}")

@@ -264,7 +264,7 @@ class ModifiedLeftSection(QWidget):
     def apply_all_filters(self):
         """
         모든 필터 (범례 & 엑셀 스타일) 적용
-        필터링된 라인만 그리드에 표시
+        Line과 Project 필터를 모두 고려하여 데이터 필터링
         """
         if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
             return
@@ -276,71 +276,113 @@ class ModifiedLeftSection(QWidget):
                 if is_active:
                     active_lines.append(line)
 
-        # *** 핵심 수정: 활성화된 라인이 없으면 모든 라인을 표시 ***
-        if not active_lines:
-            print("DEBUG: 활성화된 라인이 없음 - 모든 라인 표시")
-            # 빈 그리드 대신 모든 라인을 활성화된 것으로 처리
+        # 현재 활성화된 프로젝트 필터 확인
+        active_projects = []
+        if hasattr(self, 'current_excel_filter_states') and 'project' in self.current_excel_filter_states:
+            for project, is_active in self.current_excel_filter_states['project'].items():
+                if is_active:
+                    active_projects.append(project)
+
+        # *** 핵심 수정: 라인과 프로젝트 필터가 모두 없으면 모든 데이터 표시 ***
+        if not active_lines and not active_projects:
+            print("DEBUG: 활성화된 라인/프로젝트가 없음 - 모든 데이터 표시")
             if hasattr(self, 'data') and self.data is not None and not self.data.empty:
                 all_lines = self.data['Line'].unique().tolist()
-                self.rebuild_grid_with_filtered_lines(all_lines)
+                self.rebuild_grid_with_filtered_data(all_lines, None)
             else:
-                # 데이터가 없는 경우에만 빈 그리드 표시
                 self.show_empty_grid()
             return
 
-        # 활성화된 라인이 있으면 그리드를 다시 구성
+        # 활성화된 필터가 있으면 해당 데이터만 표시
         print(f"DEBUG: 활성화된 라인들: {active_lines}")
-        self.rebuild_grid_with_filtered_lines(active_lines)
+        print(f"DEBUG: 활성화된 프로젝트들: {active_projects}")
 
-    def rebuild_grid_with_filtered_lines(self, active_lines):
+        # *** 수정: 모든 경우에 rebuild_grid_with_filtered_data 사용 ***
+        # 라인 필터만 있는 경우
+        if active_lines and not active_projects:
+            self.rebuild_grid_with_filtered_data(active_lines, None)
+        # 프로젝트 필터만 있는 경우
+        elif not active_lines and active_projects:
+            # *** 핵심: 빈 라인 리스트 전달 (필터링된 데이터에서 라인 추출하도록) ***
+            self.rebuild_grid_with_filtered_data(None, active_projects)
+        # 라인과 프로젝트 필터가 모두 있는 경우
+        else:
+            self.rebuild_grid_with_filtered_data(active_lines, active_projects)
+
+    def rebuild_grid_with_filtered_data(self, active_lines, active_projects=None):
         """
-        활성화된 라인들만으로 그리드 재구성
+        활성화된 라인과 프로젝트로 그리드 재구성
         """
         if not self.data is not None:
             return
 
         try:
-            # 활성화된 라인만 필터링
-            filtered_data = self.data[self.data['Line'].isin(active_lines)].copy()
+            # 데이터 필터링
+            filtered_data = self.data.copy()
+
+            # 라인 필터 적용
+            if active_lines:
+                filtered_data = filtered_data[filtered_data['Line'].isin(active_lines)]
+
+            # 프로젝트 필터 적용
+            if active_projects and 'Project' in filtered_data.columns:
+                # NaN 값 처리
+                project_mask = filtered_data['Project'].isin(active_projects)
+                # NaN을 "N/A"로 처리한 경우도 고려
+                if "N/A" in active_projects:
+                    nan_mask = filtered_data['Project'].isna()
+                    project_mask = project_mask | nan_mask
+                filtered_data = filtered_data[project_mask]
+
+            print(f"DEBUG: 필터링 후 데이터 행 수: {len(filtered_data)}")
 
             if filtered_data.empty:
-                # 데이터가 없으면 빈 그리드 표시
-                self.grid_widget.clearAllItems()
+                self.show_empty_grid()
                 return
 
-            # 제조동별 생산량 기준으로 정렬 (필터링된 데이터로만)
+            # *** 핵심 수정: 필터링된 데이터에서 실제 존재하는 라인만 추출 ***
+            actual_lines_in_filtered_data = filtered_data['Line'].unique().tolist()
+            print(f"DEBUG: 필터링된 데이터에 실제 존재하는 라인들: {actual_lines_in_filtered_data}")
+
+            # 라인 정렬 (필터링된 데이터의 라인만 사용)
             filtered_data['Building'] = filtered_data['Line'].str[0]
             building_production = filtered_data.groupby('Building')['Qty'].sum()
             sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
 
-            # 활성화된 라인들을 제조동별로 정렬
+            # *** 실제 데이터가 있는 라인들만 정렬 ***
             sorted_active_lines = []
             for building in sorted_buildings:
-                building_lines = [line for line in active_lines if line.startswith(building)]
+                building_lines = [line for line in actual_lines_in_filtered_data if line.startswith(building)]
                 sorted_building_lines = sorted(building_lines)
                 sorted_active_lines.extend(sorted_building_lines)
 
-            # 교대 정보
+            # 혹시 누락된 라인이 있으면 추가 (제조동 분류에 실패한 경우)
+            remaining_lines = [line for line in actual_lines_in_filtered_data if line not in sorted_active_lines]
+            if remaining_lines:
+                sorted_active_lines.extend(sorted(remaining_lines))
+
+            print(f"DEBUG: 최종 표시할 라인들: {sorted_active_lines}")
+
+            # 교대 정보 (실제 데이터가 있는 라인만)
             line_shifts = {}
             for line in sorted_active_lines:
                 line_shifts[line] = ["Day", "Night"]
 
-            # 행 헤더 (필터링된 라인만)
+            # 행 헤더 (실제 데이터가 있는 라인만)
             filtered_row_headers = []
             for line in sorted_active_lines:
                 for shift in ["Day", "Night"]:
                     filtered_row_headers.append(f"{line}_({shift})")
 
-            print(f"DEBUG: 필터링된 행 헤더: {filtered_row_headers}")
+            print(f"DEBUG: 최종 행 헤더: {filtered_row_headers}")
 
-            # 그리드 재구성 (기존 setupGrid 방식 그대로 사용)
+            # 그리드 재구성
             self.grid_widget.setupGrid(
                 rows=len(filtered_row_headers),
                 columns=len(self.days),
                 row_headers=filtered_row_headers,
                 column_headers=self.days,
                 line_shifts=line_shifts
-                # 동적 크기 매개변수 제거 - 기본 동작 유지
             )
 
             # 기존 아이템 모두 지우기
@@ -416,7 +458,7 @@ class ModifiedLeftSection(QWidget):
             # 범례 필터도 적용
             self.apply_legend_filters_only()
 
-            print(f"DEBUG: 필터링된 그리드 재구성 완료 - {len(sorted_active_lines)}개 라인")
+            print(f"DEBUG: 필터링된 그리드 재구성 완료 - {len(sorted_active_lines)}개 라인, 프로젝트 필터: {active_projects}")
 
         except Exception as e:
             print(f"필터링된 그리드 구성 중 오류: {e}")
@@ -659,36 +701,35 @@ class ModifiedLeftSection(QWidget):
     """
     엑셀 필터를 고려한 아이템 표시 여부
     """
+
     def should_show_item_excel_filter(self, item):
+        """
+        엑셀 필터를 고려한 아이템 표시 여부 (Line과 Project 모두 확인)
+        """
         if not hasattr(self, 'current_excel_filter_states') or not hasattr(item, 'item_data'):
             return True
-        
-        item_data = item.item_data
-        
-        # 라인 필터 체크 - Line 컬럼 사용
-        if 'Line' in item_data:
-            line = item_data['Line']
 
-            if isinstance(line, (int, float)):
-                line = str(int(line))
-            else:
-                line = str(line)
-                
-            if line in self.current_excel_filter_states['line'] and not self.current_excel_filter_states['line'][line]:
+        item_data = item.item_data
+
+        # 라인 필터 체크
+        if 'Line' in item_data:
+            line = str(item_data['Line'])
+            line_filters = self.current_excel_filter_states.get('line', {})
+            if line_filters and line in line_filters and not line_filters[line]:
                 return False
-        
-        # 프로젝트 필터 체크 - Project 컬럼 사용
+
+        # 프로젝트 필터 체크
         if 'Project' in item_data:
             project = item_data['Project']
-
-            if pd.isna(project):  # nan 값 처리
+            if pd.isna(project):
                 project = "N/A"
             else:
                 project = str(project)
-                
-            if project in self.current_excel_filter_states['project'] and not self.current_excel_filter_states['project'][project]:
+
+            project_filters = self.current_excel_filter_states.get('project', {})
+            if project_filters and project in project_filters and not project_filters[project]:
                 return False
-        
+
         return True
     
     """필터 활성화 요청 처리"""
@@ -703,58 +744,55 @@ class ModifiedLeftSection(QWidget):
 
     def update_filter_data(self):
         """
-        데이터 로드 후 필터 데이터 업데이트
-        그리드와 동일한 정렬 순서를 사용
+        데이터 로드 후 필터 데이터 업데이트 (Project 컬럼 처리 개선)
         """
         if self.data is None:
             return
 
-        # 그리드와 동일한 정렬 로직 적용
         try:
-            # 제조동 정보 추출 (Line 이름의 첫 글자가 제조동)
+            # 라인 정렬 (기존 로직과 동일)
             temp_data = self.data.copy()
             temp_data['Building'] = temp_data['Line'].str[0]
-
-            # 제조동별 생산량 계산 (정렬 목적)
             building_production = temp_data.groupby('Building')['Qty'].sum()
-
-            # 생산량 기준으로 제조동 정렬 (내림차순)
             sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
 
-            # 모든 고유 라인 가져오기
             all_lines = temp_data['Line'].unique()
-
-            # 제조동별로 정렬된 라인 목록 생성 (그리드와 동일한 로직)
             lines = []
             for building in sorted_buildings:
-                # 해당 제조동에 속하는 라인들 찾기
                 building_lines = [line for line in all_lines if line.startswith(building)]
-
-                # 라인 이름 기준 오름차순 정렬 (그리드와 동일)
                 sorted_building_lines = sorted(building_lines)
-
-                # 정렬된 라인 추가
                 lines.extend(sorted_building_lines)
 
-            # 혹시 누락된 라인이 있으면 맨 뒤에 추가
             remaining_lines = [line for line in all_lines if line not in lines]
             if remaining_lines:
                 lines.extend(sorted(remaining_lines))
 
+            # *** 프로젝트 목록 추출 개선 ***
+            projects = []
+            if 'Project' in self.data.columns:
+                print("DEBUG: Project 컬럼 발견")
+                unique_projects = self.data['Project'].unique()
+                print(f"DEBUG: 고유 프로젝트 값들: {unique_projects}")
+
+                for project in unique_projects:
+                    if pd.isna(project):
+                        projects.append("N/A")  # NaN 값을 "N/A"로 처리
+                    else:
+                        projects.append(str(project))
+
+                projects = sorted(set(projects))  # 중복 제거하고 정렬
+                print(f"DEBUG: 최종 프로젝트 목록: {projects}")
+            else:
+                print("DEBUG: Project 컬럼이 데이터에 없습니다")
+
+            # 필터 위젯에 데이터 설정
+            self.filter_widget.set_filter_data(lines, projects)
+            print(f"DEBUG: 필터 데이터 설정 완료 - 라인: {len(lines)}개, 프로젝트: {len(projects)}개")
+
         except Exception as e:
-            print(f"라인 정렬 중 오류 발생: {e}")
-            # 오류 발생 시 기본 정렬 사용
-            lines = sorted(self.data['Line'].unique()) if 'Line' in self.data.columns else []
-
-        # 프로젝트 목록 추출 - Project 컬럼에서 추출
-        projects = []
-        if 'Project' in self.data.columns:
-            # nan 값 처리 및 문자열 변환
-            projects = [str(project) if not pd.isna(project) else "N/A" for project in self.data['Project']]
-            projects = sorted(set(projects))  # 중복 제거하고 정렬
-
-        # 필터 위젯에 데이터 설정
-        self.filter_widget.set_filter_data(lines, projects)
+            print(f"필터 데이터 업데이트 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
 
     """
     검색 기능 실행

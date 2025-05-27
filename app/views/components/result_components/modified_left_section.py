@@ -777,26 +777,50 @@ class ModifiedLeftSection(QWidget):
         self.current_selected_item = None
         self.current_selected_container = None
 
-        # 아이템 검색 및 하이라이트 처리
-        visible_count = 0
+        # 검색 결과를 행 우선으로 정렬하기 위한 임시 리스트
+        row_ordered_results = []
         invalid_items = []
 
-        # 모든 아이템에 대해 검색 적용
-        for item in self.all_items[:]:
-            try:
-                is_match = self.apply_search_to_item(item, search_text)
-                if is_match:
-                    visible_count += 1
-                    self.search_results.append(item)
-            except RuntimeError:
-                invalid_items.append(item)
-            except Exception as e:
-                print(f"검색 중 오류 발생: {e}")
+        # *** 핵심 변경: 행 우선 순서로 아이템 수집 ***
+        if hasattr(self.grid_widget, 'containers'):
+            for row_idx, row_containers in enumerate(self.grid_widget.containers):
+                for col_idx, container in enumerate(row_containers):
+                    for item in container.items:
+                        try:
+                            # 검색 조건 확인
+                            if hasattr(item, 'item_data') and item.item_data:
+                                item_code = str(item.item_data.get('Item', '')).lower()
+                                is_match = search_text in item_code
+
+                                if is_match:
+                                    # 행과 열 정보와 함께 저장 (행 우선 정렬용)
+                                    row_ordered_results.append({
+                                        'item': item,
+                                        'row': row_idx,
+                                        'col': col_idx
+                                    })
+
+                                # 검색 포커스 설정
+                                if hasattr(item, 'set_search_focus'):
+                                    current_focus = getattr(item, 'is_search_focused', False)
+                                    if current_focus != is_match:
+                                        item.set_search_focus(is_match)
+
+                        except RuntimeError:
+                            invalid_items.append(item)
+                        except Exception as e:
+                            print(f"검색 중 오류 발생: {e}")
 
         # 유효하지 않은 아이템 목록에서 제거
         for item in invalid_items:
             if item in self.all_items:
                 self.all_items.remove(item)
+
+        # *** 핵심 변경: 행 우선 정렬 (row -> col 순서) ***
+        row_ordered_results.sort(key=lambda x: (x['row'], x['col']))
+
+        # 정렬된 순서로 검색 결과 저장
+        self.search_results = [result['item'] for result in row_ordered_results]
 
         # 컨테이너 가시성 업데이트
         if hasattr(self.grid_widget, 'update_container_visibility'):
@@ -810,9 +834,12 @@ class ModifiedLeftSection(QWidget):
             self.current_result_index = 0
             self.select_current_result()
             self.update_result_navigation()
+
+            print(f"검색 완료: '{search_text}' - {len(self.search_results)}개 결과 (행 우선 정렬)")
         else:
             # 검색 결과 없음 표시
             self.search_widget.set_result_status(0, 0)
+            print(f"검색 결과 없음: '{search_text}'")
 
     """
     아이템에 검색 조건 적용
@@ -1026,40 +1053,144 @@ class ModifiedLeftSection(QWidget):
     """
     검색 항목을 재검색하되 기존 검색 결과와 선택 상태를 유지
     """
+
+    def search_items(self, search_text):
+        search_text = search_text.strip().lower()
+
+        if not search_text:
+            self.clear_search()
+            return
+
+        # 검색 상태 업데이트
+        self.search_results = []
+        self.current_result_index = -1
+
+        # 그리드의 모든 선택 상태 초기화
+        if hasattr(self.grid_widget, 'clear_all_selections'):
+            self.grid_widget.clear_all_selections()
+        self.current_selected_item = None
+        self.current_selected_container = None
+
+        # 검색 결과를 행 우선으로 정렬하기 위한 임시 리스트
+        row_ordered_results = []
+        invalid_items = []
+
+        # *** 핵심 변경: 행 우선 순서로 아이템 수집 ***
+        if hasattr(self.grid_widget, 'containers'):
+            for row_idx, row_containers in enumerate(self.grid_widget.containers):
+                for col_idx, container in enumerate(row_containers):
+                    for item in container.items:
+                        try:
+                            # 검색 조건 확인
+                            if hasattr(item, 'item_data') and item.item_data:
+                                item_code = str(item.item_data.get('Item', '')).lower()
+                                is_match = search_text in item_code
+
+                                if is_match:
+                                    # 행과 열 정보와 함께 저장 (행 우선 정렬용)
+                                    row_ordered_results.append({
+                                        'item': item,
+                                        'row': row_idx,
+                                        'col': col_idx
+                                    })
+
+                                # 검색 포커스 설정
+                                if hasattr(item, 'set_search_focus'):
+                                    current_focus = getattr(item, 'is_search_focused', False)
+                                    if current_focus != is_match:
+                                        item.set_search_focus(is_match)
+
+                        except RuntimeError:
+                            invalid_items.append(item)
+                        except Exception as e:
+                            print(f"검색 중 오류 발생: {e}")
+
+        # 유효하지 않은 아이템 목록에서 제거
+        for item in invalid_items:
+            if item in self.all_items:
+                self.all_items.remove(item)
+
+        # *** 핵심 변경: 행 우선 정렬 (row -> col 순서) ***
+        row_ordered_results.sort(key=lambda x: (x['row'], x['col']))
+
+        # 정렬된 순서로 검색 결과 저장
+        self.search_results = [result['item'] for result in row_ordered_results]
+
+        # 컨테이너 가시성 업데이트
+        if hasattr(self.grid_widget, 'update_container_visibility'):
+            self.grid_widget.update_container_visibility()
+
+        # 결과 네비게이션 표시
+        self.search_widget.show_result_navigation(True)
+
+        # 검색 결과 처리
+        if self.search_results:
+            self.current_result_index = 0
+            self.select_current_result()
+            self.update_result_navigation()
+
+            print(f"검색 완료: '{search_text}' - {len(self.search_results)}개 결과 (행 우선 정렬)")
+        else:
+            # 검색 결과 없음 표시
+            self.search_widget.set_result_status(0, 0)
+            print(f"검색 결과 없음: '{search_text}'")
+
     def search_items_without_clear(self):
         search_text = self.search_widget.get_search_text()
         if not search_text:
             return
-        
+
         # 현재 선택된 아이템 저장
         current_selected_item = self.current_selected_item
-        
-        # 검색 결과 업데이트
-        self.search_results = []
+
+        # 검색 결과를 행 우선으로 정렬하기 위한 임시 리스트
+        row_ordered_results = []
         invalid_items = []
-        
-        # 검색 조건에 맞는 아이템만 표시 및 결과에 추가
-        for item in self.all_items[:]:
-            try:
-                is_match = self.apply_search_to_item(item, search_text)
-                if is_match:
-                    self.search_results.append(item)
-            except RuntimeError:
-                invalid_items.append(item)
-            except Exception as e:
-                print(f"검색 중 오류 발생: {e}")
-        
+
+        # *** 핵심 변경: 행 우선 순서로 아이템 수집 ***
+        if hasattr(self.grid_widget, 'containers'):
+            for row_idx, row_containers in enumerate(self.grid_widget.containers):
+                for col_idx, container in enumerate(row_containers):
+                    for item in container.items:
+                        try:
+                            # 검색 조건 확인
+                            if hasattr(item, 'item_data') and item.item_data:
+                                item_code = str(item.item_data.get('Item', '')).lower()
+                                is_match = search_text in item_code
+
+                                if is_match:
+                                    # 행과 열 정보와 함께 저장 (행 우선 정렬용)
+                                    row_ordered_results.append({
+                                        'item': item,
+                                        'row': row_idx,
+                                        'col': col_idx
+                                    })
+
+                                # 검색 포커스 설정
+                                self.apply_search_to_item(item, search_text)
+
+                        except RuntimeError:
+                            invalid_items.append(item)
+                        except Exception as e:
+                            print(f"검색 중 오류 발생: {e}")
+
         # 잘못된 아이템 제거
         for item in invalid_items:
             if item in self.all_items:
                 self.all_items.remove(item)
-        
+
+        # *** 핵심 변경: 행 우선 정렬 (row -> col 순서) ***
+        row_ordered_results.sort(key=lambda x: (x['row'], x['col']))
+
+        # 정렬된 순서로 검색 결과 저장
+        self.search_results = [result['item'] for result in row_ordered_results]
+
         # 모든 필터 적용 (검색 결과 포함)
         self.apply_all_filters()
-        
+
         # 검색 결과 UI 업데이트
         self.search_widget.show_result_navigation(True)
-        
+
         # 검색 결과가 있으면 선택 및 네비게이션 업데이트
         if self.search_results:
             # 이전에 선택된 아이템이 검색 결과에 있으면 선택 유지
@@ -1067,7 +1198,7 @@ class ModifiedLeftSection(QWidget):
                 self.current_result_index = self.search_results.index(current_selected_item)
             else:
                 self.current_result_index = 0
-            
+
             self.select_current_result()
             self.update_result_navigation()
         else:

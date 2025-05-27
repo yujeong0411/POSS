@@ -276,10 +276,16 @@ class ModifiedLeftSection(QWidget):
                 if is_active:
                     active_lines.append(line)
 
-        # 활성화된 라인이 없으면 (Clear All 된 경우) 빈 그리드 표시
+        # *** 핵심 수정: 활성화된 라인이 없으면 모든 라인을 표시 ***
         if not active_lines:
-            print("DEBUG: 활성화된 라인이 없음 - 빈 그리드 표시")
-            self.show_empty_grid()
+            print("DEBUG: 활성화된 라인이 없음 - 모든 라인 표시")
+            # 빈 그리드 대신 모든 라인을 활성화된 것으로 처리
+            if hasattr(self, 'data') and self.data is not None and not self.data.empty:
+                all_lines = self.data['Line'].unique().tolist()
+                self.rebuild_grid_with_filtered_lines(all_lines)
+            else:
+                # 데이터가 없는 경우에만 빈 그리드 표시
+                self.show_empty_grid()
             return
 
         # 활성화된 라인이 있으면 그리드를 다시 구성
@@ -1048,32 +1054,27 @@ class ModifiedLeftSection(QWidget):
     """
     아이템 데이터가 변경되면 호출되는 함수
     """
+
     def on_item_data_changed(self, item, new_data, changed_fields=None):
         if not item or not new_data or not hasattr(item, 'item_data'):
             print("아이템 또는 데이터가 없음")
             return
-        
+
         # 현재 아이템의 원래 위치 정보 확인
         original_data = item.item_data.copy() if hasattr(item, 'item_data') else {}
-        
+
         # 위치 정보가 변경되지 않았다면 원래 위치 정보 사용
         if changed_fields and 'Line' not in changed_fields and 'Time' not in changed_fields:
             new_data['Line'] = original_data.get('Line', new_data.get('Line'))
             new_data['Time'] = original_data.get('Time', new_data.get('Time'))
-        
+
         # MVC 컨트롤러가 있으면 시그널 발생
         if hasattr(self, 'controller') and self.controller:
             print("MVC 컨트롤러로 처리 - 시그널 발생")
             self.itemModified.emit(item, new_data, changed_fields)
-            
-            # 필터 및 검색 상태 즉시 재적용
-            self.apply_all_filters()
-            
-            # 검색이 활성화된 경우 검색 UI 즉시 업데이트
-            if self.search_widget.is_search_active():
-                self.search_items_without_clear()
-                
-            # 출하 분석도 즉시 업데이트
+
+            # *** 핵심: 모든 후처리를 즉시 실행 - 지연 없음 ***
+            # 출하 분석만 간단하게 트리거
             self.trigger_shipment_analysis()
             return
     
@@ -1676,6 +1677,30 @@ class ModifiedLeftSection(QWidget):
                                 item.set_shortage_status(True, matching_shortages)
                             else:
                                 item.set_shortage_status(False)
+
+    def apply_filters_safely(self):
+        """
+        안전한 필터 적용 - 드래그앤드롭 후 호출
+        """
+        try:
+            # 현재 데이터가 있는지 확인
+            if not hasattr(self, 'data') or self.data is None or self.data.empty:
+                print("DEBUG: 데이터가 없어서 필터 적용 스킵")
+                return
+
+            # 범례 필터만 적용 (엑셀 필터는 건드리지 않음)
+            self.apply_legend_filters_only()
+
+            # 검색이 활성화된 경우에만 검색 상태 복원
+            if hasattr(self, 'search_widget') and self.search_widget.is_search_active():
+                search_text = self.search_widget.get_search_text()
+                if search_text:
+                    QTimer.singleShot(50, lambda: self.search_items(search_text))
+
+        except Exception as e:
+            print(f"안전한 필터 적용 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
 
     """범례 위젯에서 필터가 변경될 때 호출"""
     def on_filter_changed(self, status_type, is_checked):

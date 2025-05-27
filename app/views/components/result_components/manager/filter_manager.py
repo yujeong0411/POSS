@@ -249,6 +249,10 @@ class FilterManager(QObject):
                             shortage_info = self.left_section.current_shortage_items[item_code]
                             new_item.set_shortage_status(True, shortage_info)
 
+            print("=== [DEBUG] _rebuild_grid_with_filtered_data 완료 ===")
+            print(f"→ 최종 아이템 수: {len(self.left_section.all_items)}")
+            print("→ 범례 필터 적용 직전")
+
             # 범례 필터도 적용
             self._apply_legend_filters_only()
 
@@ -288,6 +292,8 @@ class FilterManager(QObject):
     범례 필터만 적용 (상태선 표시)
     """
     def _apply_legend_filters_only(self):
+        print("=== [DEBUG] 범례 필터 적용 시작 ===")
+        print(f"→ current_filter_states: {self.left_section.current_filter_states}")
         if not hasattr(self.left_section, 'grid_widget') or not hasattr(self.left_section.grid_widget, 'containers'):
             return
 
@@ -310,6 +316,8 @@ class FilterManager(QObject):
 
                     # 상태선 업데이트
                     item.update()
+        
+        print("=== [DEBUG] 범례 필터 적용 완료 ===")
 
     """
     종합적인 필터 적용 (엑셀 + 범례 + 검색)

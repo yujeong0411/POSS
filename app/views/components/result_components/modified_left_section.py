@@ -280,15 +280,22 @@ class ModifiedLeftSection(QWidget):
     - 매니저 위임
     """
     def apply_all_filters(self):
-        print("[LeftSection] 모든 필터 적용")
+        print("=== [DEBUG] apply_all_filters 호출 ===")
+        print("→ Step 1: 엑셀 필터 적용")
         self.filter_manager.apply_filters(self.current_excel_filter_states)
+
+        # 범례 필터도 명시적으로 적용
+        print("→ Step 2: 범례 필터 적용")
+        self.filter_manager.apply_legend_filters(self.current_filter_states)
 
         # 검색이 활성화된 경우 검색 재적용
         if hasattr(self, 'search_widget') and self.search_widget.is_search_active():
             search_text = self.search_widget.get_search_text()
+            print(f"→ Step 3: 검색 필터 적용 - 검색어: {search_text}")
             if search_text:
                 # SearchManager 사용
                 self.search_manager.search_items(search_text)
+            print("=== [DEBUG] 전체 필터 적용 종료 ===")
 
     """
     활성화된 라인과 프로젝트로 그리드 재구성
@@ -318,13 +325,8 @@ class ModifiedLeftSection(QWidget):
         if self.current_filter_states == filter_states:
             return
         
-        print(f"[LeftSection] 범례 필터 변경: {filter_states}")
-        self.filter_manager.apply_legend_filters(filter_states)  # return 제거
-        
-        # 필터 활성화 시 관련 분석 트리거
-        for status_type, is_checked in filter_states.items():
-            if is_checked:
-                self.on_filter_activation_requested(status_type)
+        self.current_filter_states = filter_states
+        self.apply_all_filters()
                 
     """
     상태 필터 활성화 요청 처리

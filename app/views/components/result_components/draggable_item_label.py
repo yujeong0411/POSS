@@ -205,11 +205,20 @@ class DraggableItemLabel(QFrame):
             self.drag_start_position = event.pos()
             self.setCursor(Qt.ClosedHandCursor)  # 마우스 누를 때 커서 변경
 
-            # 클릭 시 선택 상태 토글
-            self.toggle_selected()
+            # *** 수정: 클릭 시 다른 아이템 선택 해제 후 현재 아이템 선택 ***
+            # 부모 컨테이너를 통해 다른 아이템들의 선택 해제 요청
+            parent_container = self.parent()
+            if hasattr(parent_container, 'clear_selection'):
+                # 현재 아이템을 제외하고 다른 아이템들 선택 해제
+                parent_container.clear_selection_except(self)
 
-            # 선택 상태 변경 이벤트 발생
-            self.itemSelected.emit(self)
+            # 현재 아이템 선택
+            if not self.is_selected:
+                self.set_selected(True)
+                # 선택 상태 변경 이벤트 발생
+                self.itemSelected.emit(self)
+
+
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:

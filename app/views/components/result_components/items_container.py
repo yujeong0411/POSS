@@ -148,11 +148,22 @@ class ItemsContainer(QWidget):
     """
     모든 아이템 선택 해제
     """
-    def clear_selection(self):
-        if self.selected_item:
-            self.selected_item.set_selected(False)
-            self.selected_item = None
 
+    def clear_selection(self):
+        """모든 아이템 선택 해제"""
+        selection_changed = False
+
+        for item in self.items:
+            if hasattr(item, 'is_selected') and item.is_selected:
+                item.set_selected(False)
+                selection_changed = True
+
+        # 컨테이너 레벨에서 선택된 아이템도 초기화
+        if self.selected_item:
+            self.selected_item = None
+            selection_changed = True
+
+        return selection_changed
     """
     특정 아이템 삭제
     """
@@ -287,6 +298,8 @@ class ItemsContainer(QWidget):
 
     from PyQt5.QtCore import Qt, QMimeData, pyqtSignal, QTimer  # QTimer import 추가
 
+    # items_container.py의 dropEvent 메서드 수정
+
     def dropEvent(self, event):
         if event.mimeData().hasText():
             # 드래그된 아이템 텍스트 가져오기
@@ -316,6 +329,7 @@ class ItemsContainer(QWidget):
 
             # 기존 아이템 상태 백업
             source_states = {}
+            was_selected = False  # 선택 상태 백업 추가
             if isinstance(source, DraggableItemLabel):
                 source_states = {
                     'is_shortage': getattr(source, 'is_shortage', False),
@@ -324,9 +338,11 @@ class ItemsContainer(QWidget):
                     'is_shipment_failure': getattr(source, 'is_shipment_failure', False),
                     'shipment_failure_reason': getattr(source, 'shipment_failure_reason', None)
                 }
+                # *** 선택 상태 백업 ***
+                was_selected = getattr(source, 'is_selected', False)
 
             if is_ctrl_pressed and isinstance(source, DraggableItemLabel):
-                # *** Ctrl+드래그 복사 처리 (기존 로직 유지하되 단순화) ***
+                # *** Ctrl+드래그 복사 처리 ***
                 source_container = source.parent()
 
                 if item_data is None and hasattr(source, 'item_data') and source.item_data:
@@ -369,6 +385,8 @@ class ItemsContainer(QWidget):
                     if source_states['is_shipment_failure']:
                         new_item.set_shipment_failure(True, source_states['shipment_failure_reason'])
 
+                    # *** 복사본은 선택하지 않음 ***
+                    new_item.set_selected(False)
                     new_item.update_text_from_data()
 
                 # 복사 시그널 발생
@@ -386,7 +404,7 @@ class ItemsContainer(QWidget):
                 source_container = source.parent()
 
                 if source_container == self:
-                    # *** 같은 컨테이너 내 이동 - 가장 단순하게 처리 ***
+                    # *** 같은 컨테이너 내 이동 ***
                     drop_index = self.findDropIndex(event.pos())
                     source_index = self.items.index(source)
 
@@ -405,8 +423,11 @@ class ItemsContainer(QWidget):
                     self.items.insert(drop_index, source)
                     self.layout.addSpacerItem(self.spacer)
 
+                    # *** 같은 컨테이너 내 이동 시에는 선택 상태 유지 ***
+                    # 별도 처리 없음 - 기존 선택 상태 그대로 유지
+
                 elif isinstance(source_container, ItemsContainer):
-                    # *** 다른 컨테이너에서 이동 - 단순화 ***
+                    # *** 다른 컨테이너에서 이동 ***
                     grid_widget = self.find_parent_grid_widget()
                     target_row, target_col = -1, -1
 
@@ -435,7 +456,7 @@ class ItemsContainer(QWidget):
                             new_time = (day_idx * 2) + (1 if is_day_shift else 2)
                             item_data['Time'] = str(new_time)
 
-                            # *** 검증은 단순하게 - 실패해도 계속 진행 ***
+                            # 검증 처리 (기존과 동일)
                             try:
                                 validator = getattr(grid_widget, 'validator', None)
                                 if validator:
@@ -450,10 +471,9 @@ class ItemsContainer(QWidget):
                                         item_data['_validation_failed'] = True
                                         item_data['_validation_message'] = message
                             except Exception:
-                                pass  # 검증 오류 무시
+                                pass
 
                     # 새 아이템 생성
-                    was_selected = getattr(source, 'is_selected', False)
                     new_item = self.addItem(item_text, -1, item_data)
 
                     if new_item:
@@ -467,11 +487,19 @@ class ItemsContainer(QWidget):
 
                         new_item.update_text_from_data()
 
+                        # *** 핵심 수정: 드래그앤드롭 시 자동 선택하지 않음 ***
+                        # 기존 선택 상태가 있었던 경우에만 선택
                         if was_selected:
+                            # 원본 아이템의 선택 상태를 해제하고 새 아이템을 선택
+                            if hasattr(source, 'set_selected'):
+                                source.set_selected(False)
                             new_item.set_selected(True)
                             self.on_item_selected(new_item)
+                        else:
+                            # 선택되지 않았던 아이템은 선택하지 않음
+                            new_item.set_selected(False)
 
-                        # *** 변경 필드 정보는 간단하게만 ***
+                        # 변경 필드 정보 생성
                         changed_fields = {}
                         if hasattr(source, 'item_data') and source.item_data:
                             if ('Line' in source.item_data and 'Line' in item_data and
@@ -488,7 +516,7 @@ class ItemsContainer(QWidget):
                                     'to': item_data.get('Time', '')
                                 }
 
-                        # *** 핵심: 시그널을 즉시 발생 - 지연 없음 ***
+                        # 시그널 발생
                         self.itemDataChanged.emit(new_item, item_data, changed_fields)
 
                     # 원본 삭제
@@ -498,10 +526,12 @@ class ItemsContainer(QWidget):
                 new_item = self.addItem(item_text, -1, item_data)
                 if new_item and hasattr(new_item, 'update_text_from_data'):
                     new_item.update_text_from_data()
+                    # *** 새로 생성된 아이템도 선택하지 않음 ***
+                    new_item.set_selected(False)
 
             event.acceptProposedAction()
 
-            # *** 핵심: 최종 시그널 즉시 발생 - 지연 없음 ***
+            # 최종 시그널 발생
             item_id = None
             if 'new_item' in locals() and new_item is not None:
                 item_id = ItemKeyManager.extract_item_id(new_item)
@@ -674,3 +704,15 @@ class ItemsContainer(QWidget):
                 # 변경 신호 발생
                 print("DEBUG: itemsChanged 시그널 발생")
                 self.itemsChanged.emit(item_id)
+
+    def clear_selection_except(self, except_item):
+        """특정 아이템을 제외하고 다른 모든 아이템의 선택을 해제"""
+        for item in self.items:
+            if item != except_item and hasattr(item, 'set_selected'):
+                if getattr(item, 'is_selected', False):
+                    item.set_selected(False)
+
+        # 다른 컨테이너의 선택도 해제하도록 그리드 위젯에 요청
+        grid_widget = self.find_parent_grid_widget()
+        if grid_widget and hasattr(grid_widget, 'clear_other_selections'):
+            grid_widget.clear_other_selections(self, except_item)

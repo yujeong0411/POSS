@@ -314,10 +314,17 @@ class ItemGridWidget(QWidget):
     """
     컨테이너에서 아이템이 선택되었을 때 호출되는 핸들러
     """
+
     def on_item_selected(self, selected_item, container):
-        # 이전에 선택된 컨테이너가 있고, 현재 컨테이너와 다르다면 선택 해제
-        if self.current_selected_container and self.current_selected_container != container:
-            self.current_selected_container.clear_selection()
+        """컨테이너에서 아이템이 선택되었을 때 호출되는 핸들러 - 수정"""
+
+        # *** 수정: 다른 모든 컨테이너의 선택 해제 ***
+        for row in self.containers:
+            for other_container in row:
+                if other_container != container:
+                    # 다른 컨테이너의 선택 해제
+                    if hasattr(other_container, 'clear_selection'):
+                        other_container.clear_selection()
 
         # 현재 선택된 컨테이너와 아이템 업데이트
         self.current_selected_container = container
@@ -482,3 +489,12 @@ class ItemGridWidget(QWidget):
     def on_item_copied(self, item, data):
         # 상위 위젯에 복사 이벤트 전달
         self.itemCopied.emit(item, data)
+
+    def clear_other_selections(self, current_container, except_item):
+        """특정 컨테이너와 아이템을 제외하고 다른 모든 선택을 해제"""
+        for row in self.containers:
+            for container in row:
+                if container != current_container:
+                    # 다른 컨테이너의 모든 아이템 선택 해제
+                    if hasattr(container, 'clear_selection'):
+                        container.clear_selection()

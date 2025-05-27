@@ -759,13 +759,14 @@ class ModifiedLeftSection(QWidget):
     """
     검색 기능 실행
     """
+
     def search_items(self, search_text):
         search_text = search_text.strip().lower()
 
         if not search_text:
             self.clear_search()
             return
-        
+
         # 검색 상태 업데이트
         self.search_results = []
         self.current_result_index = -1
@@ -791,7 +792,7 @@ class ModifiedLeftSection(QWidget):
                 invalid_items.append(item)
             except Exception as e:
                 print(f"검색 중 오류 발생: {e}")
-        
+
         # 유효하지 않은 아이템 목록에서 제거
         for item in invalid_items:
             if item in self.all_items:
@@ -816,37 +817,47 @@ class ModifiedLeftSection(QWidget):
     """
     아이템에 검색 조건 적용
     """
+    """
+    아이템에 검색 조건 적용
+    """
+
     def apply_search_to_item(self, item, search_text):
-        try :
+        try:
             if not item or not hasattr(item, 'item_data') or not item.item_data:
                 return False
-            
+
             try:
                 _ = item.isVisible()
             except RuntimeError:
                 if item in self.all_items:
                     self.all_items.remove(item)
                 return False
-            
+
             item_code = str(item.item_data.get('Item', '')).lower()
             is_match = search_text in item_code
+
+            # 검색 포커스 설정 시 추가 업데이트 방지
             if hasattr(item, 'set_search_focus'):
-                item.set_search_focus(is_match)
-            
+                # 상태가 같으면 설정하지 않음
+                current_focus = getattr(item, 'is_search_focused', False)
+                if current_focus != is_match:
+                    item.set_search_focus(is_match)
+
             return is_match
         except RuntimeError:
             return False
         except Exception as e:
             print(f"아이템 검색 중 오류: {e}")
             return False
-    
+
     """
     선택된 검색 결과를 포커스하고 강조 표시
     """
+
     def select_current_result(self):
         if not self.search_results or not (0 <= self.current_result_index < len(self.search_results)):
             return
-        
+
         try:
             # 모든 아이템의 현재 검색 포커스 상태 초기화
             for i, item in enumerate(self.search_results):
@@ -854,7 +865,10 @@ class ModifiedLeftSection(QWidget):
                     # 현재 아이템만 강조
                     is_current = (i == self.current_result_index)
                     item.set_search_current(is_current)
-                    
+                    # 강제 업데이트
+                    item.repaint()
+                    item.update()
+
             # 현재 아이템 저장 및 스크롤
             self._scroll_to_current_result()
         except Exception as e:
@@ -863,6 +877,7 @@ class ModifiedLeftSection(QWidget):
     """
     검색 초기화 (SearchWidget의 searchCleared 시그널에 연결)
     """
+
     def clear_search(self):
         try:
             # 모든 아이템의 검색 포커스 해제
@@ -871,6 +886,12 @@ class ModifiedLeftSection(QWidget):
                     item.set_search_focus(False)
                 if hasattr(item, 'set_search_current'):
                     item.set_search_current(False)
+                # 강제 업데이트
+                if hasattr(item, 'repaint'):
+                    item.repaint()
+                if hasattr(item, 'update'):
+                    item.update()
+
             # 선택 상태 초기화
             if hasattr(self.grid_widget, 'clear_all_selections'):
                 self.grid_widget.clear_all_selections()
@@ -878,31 +899,31 @@ class ModifiedLeftSection(QWidget):
             self.current_selected_container = None
         except Exception as e:
             print(f"선택 초기화 오류: {e}")
-        
+
         # 검색 상태 초기화
         self.search_results = []
         self.current_result_index = -1
-        
+
         # 필터 적용
         self.apply_all_filters()
     """
     이전 검색 결과로 이동 (SearchWidget의 prevResultRequested 시그널에 연결)
     """
+
     def go_to_prev_result(self):
         if not self.search_results or self.current_result_index <= 0:
             return
-        
+
         try:
             # 인덱스 변경 전에 현재 아이템 정보 저장
             old_index = self.current_result_index
-            old_item = self.search_results[old_index]
-            
+
             # 이전 결과로 인덱스 변경
             self.current_result_index -= 1
-            
+
             # 아이템 강조 상태 업데이트 (이전 아이템 -> 일반 검색, 현재 아이템 -> 강조)
             self._update_search_highlight(old_index, self.current_result_index)
-            
+
             # 현재 결과 표시 및 네비게이션 업데이트
             self._scroll_to_current_result()
             self.update_result_navigation()
@@ -912,21 +933,21 @@ class ModifiedLeftSection(QWidget):
     """
     다음 검색 결과로 이동 (SearchWidget의 nextResultRequested 시그널에 연결)
     """
+
     def go_to_next_result(self):
         if not self.search_results or self.current_result_index >= len(self.search_results) - 1:
             return
-        
+
         try:
             # 인덱스 변경 전에 현재 아이템 정보 저장
             old_index = self.current_result_index
-            old_item = self.search_results[old_index]
-            
+
             # 다음 결과로 인덱스 변경
             self.current_result_index += 1
-            
+
             # 아이템 강조 상태 업데이트 (이전 아이템 -> 일반 검색, 현재 아이템 -> 강조)
             self._update_search_highlight(old_index, self.current_result_index)
-            
+
             # 현재 결과 표시 및 네비게이션 업데이트
             self._scroll_to_current_result()
             self.update_result_navigation()
@@ -936,14 +957,15 @@ class ModifiedLeftSection(QWidget):
     """
     검색 결과 강조 상태 업데이트 (새로운 헬퍼 메서드)
     """
+
     def _update_search_highlight(self, old_index, new_index):
         # 이전 아이템 강조 해제
         if 0 <= old_index < len(self.search_results):
             old_item = self.search_results[old_index]
             if hasattr(old_item, 'set_search_current'):
                 old_item.set_search_current(False)
-        
-        # 새 아이템 강조
+
+        # 새 아이템 강조 (repaint/update 제거)
         if 0 <= new_index < len(self.search_results):
             new_item = self.search_results[new_index]
             if hasattr(new_item, 'set_search_current'):
@@ -952,24 +974,25 @@ class ModifiedLeftSection(QWidget):
     """
     현재 검색 결과로 스크롤 (새로운 헬퍼 메서드)
     """
+
     def _scroll_to_current_result(self):
         if not (0 <= self.current_result_index < len(self.search_results)):
             return
-            
+
         current_item = self.search_results[self.current_result_index]
         container = current_item.parent()
-        
+
         # 아이템 표시 확인
         if hasattr(current_item, 'isVisible') and not current_item.isVisible():
             current_item.setVisible(True)
-        
-        # 스크롤
+
+        # 스크롤만 수행 (데이터 변경 시그널 제거)
         if hasattr(self.grid_widget, 'ensure_item_visible'):
             self.grid_widget.ensure_item_visible(container, current_item)
-                
-        # 데이터 변경 알림
-        df = self.extract_dataframe()
-        self.viewDataChanged.emit(df)
+
+        # 데이터 변경 알림 제거 - 이 부분이 중복 호출의 원인
+        # df = self.extract_dataframe()
+        # self.viewDataChanged.emit(df)
 
     """
     검색 결과 상태 업데이트

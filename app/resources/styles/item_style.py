@@ -134,15 +134,16 @@ class ItemStyle:
     # 현재 검색 결과를 위한 특별 강조 스타일
     SEARCH_CURRENT_STYLE = f"""
         QFrame {{
-            background-color: red !important;
-            border: 2px solid #3498DB;
+            background-color: #1428A0;
+            border: 2px solid #cccccc;
             border-radius: 0px;
             padding: 5px 5px 5px 5px;
             margin: 1px;
         }}
         QLabel {{
+            background-color: transparent;
+            color: white;
             font-weight: bold;
             font-family: {normal_font};
-            color: #2874A6;
         }}
     """

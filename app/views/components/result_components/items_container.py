@@ -705,8 +705,8 @@ class ItemsContainer(QWidget):
                 print("DEBUG: itemsChanged 시그널 발생")
                 self.itemsChanged.emit(item_id)
 
+    """특정 아이템을 제외하고 다른 모든 아이템의 선택을 해제"""
     def clear_selection_except(self, except_item):
-        """특정 아이템을 제외하고 다른 모든 아이템의 선택을 해제"""
         for item in self.items:
             if item != except_item and hasattr(item, 'set_selected'):
                 if getattr(item, 'is_selected', False):

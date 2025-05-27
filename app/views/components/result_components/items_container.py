@@ -299,7 +299,6 @@ class ItemsContainer(QWidget):
     from PyQt5.QtCore import Qt, QMimeData, pyqtSignal, QTimer  # QTimer import 추가
 
     # items_container.py의 dropEvent 메서드 수정
-
     def dropEvent(self, event):
         if event.mimeData().hasText():
             # 드래그된 아이템 텍스트 가져오기
@@ -373,7 +372,7 @@ class ItemsContainer(QWidget):
                             new_time = (day_idx * 2) + (1 if is_day_shift else 2)
                             item_data['Time'] = str(new_time)
 
-                # 복사본 생성
+                # *** 복사본은 항상 맨 마지막에 추가 ***
                 new_item = self.addItem(item_data.get('Item', ''), -1, item_data)
 
                 if new_item:
@@ -427,7 +426,7 @@ class ItemsContainer(QWidget):
                     # 별도 처리 없음 - 기존 선택 상태 그대로 유지
 
                 elif isinstance(source_container, ItemsContainer):
-                    # *** 다른 컨테이너에서 이동 ***
+                    # *** 다른 컨테이너에서 이동 - 핵심 수정 부분 ***
                     grid_widget = self.find_parent_grid_widget()
                     target_row, target_col = -1, -1
 
@@ -473,10 +472,16 @@ class ItemsContainer(QWidget):
                             except Exception:
                                 pass
 
-                    # 새 아이템 생성
-                    new_item = self.addItem(item_text, -1, item_data)
+                    # *** 핵심 수정: 다른 컨테이너에서 이동할 때 항상 맨 마지막에 추가 ***
+                    print(f"DEBUG: 다른 컨테이너에서 이동 - 현재 아이템 수: {len(self.items)}")
+                    new_item = self.addItem(item_text, -1, item_data)  # -1로 맨 마지막에 추가
+                    print(f"DEBUG: 아이템 추가 후 - 총 아이템 수: {len(self.items)}")
 
                     if new_item:
+                        # 아이템이 정말 마지막에 있는지 확인
+                        actual_index = self.items.index(new_item) if new_item in self.items else -1
+                        print(f"DEBUG: 새 아이템이 인덱스 {actual_index}에 추가됨")
+
                         # 상태 복원
                         if source_states['is_shortage']:
                             new_item.set_shortage_status(True, source_states['shortage_data'])
@@ -522,8 +527,8 @@ class ItemsContainer(QWidget):
                     # 원본 삭제
                     source_container.remove_item(source)
             else:
-                # 새 아이템 생성
-                new_item = self.addItem(item_text, -1, item_data)
+                # 새 아이템 생성 (외부에서 드래그된 경우)
+                new_item = self.addItem(item_text, -1, item_data)  # 맨 마지막에 추가
                 if new_item and hasattr(new_item, 'update_text_from_data'):
                     new_item.update_text_from_data()
                     # *** 새로 생성된 아이템도 선택하지 않음 ***
@@ -539,6 +544,7 @@ class ItemsContainer(QWidget):
                 item_id = item_data.get('_id')
 
             self.itemsChanged.emit(item_id)
+
 
     """
     시프트별 자재 부족 상태 업데이트

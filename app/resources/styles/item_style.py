@@ -134,7 +134,7 @@ class ItemStyle:
     # 현재 검색 결과를 위한 특별 강조 스타일
     SEARCH_CURRENT_STYLE = f"""
         QFrame {{
-            background-color: #AED6F1;
+            background-color: red !important;
             border: 2px solid #3498DB;
             border-radius: 0px;
             padding: 5px 5px 5px 5px;

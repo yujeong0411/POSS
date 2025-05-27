@@ -407,7 +407,10 @@ class FilterWidget(QWidget):
         # 체크박스 생성
         for line in sorted_lines:
             checkbox = QCheckBox(str(line))
+
+            # *** 핵심 수정: 모든 라인을 기본 활성화로 설정 ***
             checkbox.setChecked(True)  # 기본값은 체크된 상태
+
             checkbox.setStyleSheet("""
                 QCheckBox {
                     background-color: white;
@@ -415,7 +418,10 @@ class FilterWidget(QWidget):
                     padding: 3px;
                 }
             """)
+
+            # *** 핵심 수정: 필터 상태도 True로 초기화 ***
             self.filter_states['line'][line] = True
+
             checkbox.stateChanged.connect(
                 lambda state, line=line: self.on_filter_changed('line', line, state == Qt.Checked))
             self.line_checkbox_layout.addWidget(checkbox)

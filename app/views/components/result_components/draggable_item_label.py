@@ -205,11 +205,20 @@ class DraggableItemLabel(QFrame):
             self.drag_start_position = event.pos()
             self.setCursor(Qt.ClosedHandCursor)  # 마우스 누를 때 커서 변경
 
-            # 클릭 시 선택 상태 토글
-            self.toggle_selected()
+            # *** 수정: 클릭 시 다른 아이템 선택 해제 후 현재 아이템 선택 ***
+            # 부모 컨테이너를 통해 다른 아이템들의 선택 해제 요청
+            parent_container = self.parent()
+            if hasattr(parent_container, 'clear_selection'):
+                # 현재 아이템을 제외하고 다른 아이템들 선택 해제
+                parent_container.clear_selection_except(self)
 
-            # 선택 상태 변경 이벤트 발생
-            self.itemSelected.emit(self)
+            # 현재 아이템 선택
+            if not self.is_selected:
+                self.set_selected(True)
+                # 선택 상태 변경 이벤트 발생
+                self.itemSelected.emit(self)
+
+
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -223,7 +232,12 @@ class DraggableItemLabel(QFrame):
             event.accept()
 
     """마우스가 위젯 위에 올라갔을 때 호출됨"""
+
     def enterEvent(self, event):
+        # 현재 검색 아이템이면 hover 스타일 적용하지 않음
+        if hasattr(self, 'is_search_current') and self.is_search_current:
+            return
+
         if self.is_search_current:
             pass
         elif self.is_search_focused:
@@ -236,7 +250,7 @@ class DraggableItemLabel(QFrame):
             elif self.is_pre_assigned and self.is_shipment_failure:  # 사전할당/출하실패
                 self.setStyleSheet(ItemStyle.PRE_ASSIGNED_SHIPMENT_HOVER_STYLE)
             elif self.is_shortage and self.is_shipment_failure:  # 자재부족/출하실패
-                self.setStyleSheet(ItemStyle.SHORTAGE_SHIPMENT_HOVER_STYLE) 
+                self.setStyleSheet(ItemStyle.SHORTAGE_SHIPMENT_HOVER_STYLE)
             elif self.is_pre_assigned:
                 self.setStyleSheet(ItemStyle.PRE_ASSIGNED_HOVER_STYLE)
             elif self.is_shortage:
@@ -248,7 +262,13 @@ class DraggableItemLabel(QFrame):
         super().enterEvent(event)
 
     """마우스가 위젯을 벗어났을 때 호출됨"""
+
     def leaveEvent(self, event):
+        # 현재 검색 아이템이면 원래 스타일 유지
+        if hasattr(self, 'is_search_current') and self.is_search_current:
+            self.update_search_style()
+            return
+
         if not self.is_selected:
             self.update_style()
         super().leaveEvent(event)
@@ -566,17 +586,23 @@ class DraggableItemLabel(QFrame):
     """
     검색 포커스 설정 메서드
     """
+
     def set_search_focus(self, focused=True):
-        if self.is_search_focused == focused:
+        # 상태가 동일하면 중복 처리 방지
+        if hasattr(self, 'is_search_focused') and self.is_search_focused == focused:
             return
-        
+
         self.is_search_focused = focused
 
         # 포커스가 해제되면 현재 선택 상태도 함께 해제
         if not focused and hasattr(self, 'is_search_current'):
             self.is_search_current = False
-        
-        self.update_search_style()
+
+        # 스타일 업데이트만 수행 (추가 업데이트 방지)
+        if focused:
+            self.setStyleSheet(ItemStyle.SEARCH_FOCUSED_STYLE)
+        else:
+            self.update_style()
 
     """ 아이템을 삭제할 때 사용할 메서드 입니다."""
     def show_context_menu(self, position):
@@ -614,6 +640,7 @@ class DraggableItemLabel(QFrame):
         self.itemDeleteRequested.emit(self)
 
     """검색 결과 중 현재 선택된 아이템 특별 스타일 적용"""
+
     def set_search_selected(self, selected=False):
         if selected:
             self.setStyleSheet(ItemStyle.SEARCH_SELECTED_STYLE)
@@ -626,16 +653,28 @@ class DraggableItemLabel(QFrame):
     """
     현재 검색 결과에서 특별히 강조할 아이템 설정
     """
+
     def set_search_current(self, is_current=False):
+        # 상태가 동일하면 중복 처리 방지
+        if hasattr(self, 'is_search_current') and self.is_search_current == is_current:
+            return
+
         self.is_search_current = is_current
-        self.update_search_style()
+
+        # 스타일 업데이트만 수행 (repaint/update 제거)
+        if is_current:
+            # 인라인 스타일로 직접 적용
+            self.setStyleSheet(ItemStyle.SEARCH_CURRENT_STYLE)
+        else:
+            self.update_search_style()
 
     """
     검색 관련 스타일 업데이트
     """
+
     def update_search_style(self):
         if hasattr(self, 'is_search_current') and self.is_search_current:
-            # 현재 검색 위치 강조 스타일
+            # 현재 검색 위치 강조 스타일 (최우선)
             self.setStyleSheet(ItemStyle.SEARCH_CURRENT_STYLE)
         elif self.is_search_focused:
             # 일반 검색 결과 스타일
@@ -643,3 +682,4 @@ class DraggableItemLabel(QFrame):
         else:
             # 기본 스타일
             self.update_style()
+

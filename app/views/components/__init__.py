@@ -6,6 +6,5 @@ from app.views.components.data_input_page import DataInputPage
 from .pre_assigned_page import PlanningPage
 from .result_page import ResultPage
 
-
 # __all__을 정의하여 from components import * 사용 시 가져올 항목 지정
 __all__ = ['Navbar', 'DataInputPage', 'PlanningPage', 'ResultPage']

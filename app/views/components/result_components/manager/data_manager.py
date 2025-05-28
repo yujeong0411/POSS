@@ -23,14 +23,27 @@ class DataManager(QObject):
             new_data['Line'] = original_data.get('Line', new_data.get('Line'))
             new_data['Time'] = original_data.get('Time', new_data.get('Time'))
 
-        # MVC 컨트롤러가 있으면 시그널 발생
-        if hasattr(self.left_section, 'controller') and self.left_section.controller:
-            print("MVC 컨트롤러로 처리 - 시그널 발생")
+        # MVC 모드: Controller에 위임
+        if (hasattr(self.left_section, '_mvc_mode') and 
+            self.left_section._mvc_mode and 
+            hasattr(self.left_section, 'controller') and 
+            self.left_section.controller):
+            
+            print("DataManager: MVC 모드 - Controller에 위임")
             self.left_section.itemModified.emit(item, new_data, changed_fields)
-
-            # *** 핵심: 모든 후처리를 즉시 실행 - 지연 없음 ***
-            self._trigger_analysis()
+            # 분석은 Controller가 담당
             return
+
+        # Legacy 모드: 기존 방식
+        print("DataManager: Legacy 모드 - 직접 처리")
+        self._legacy_item_changed(item, new_data, changed_fields)
+
+    def _legacy_item_changed(self, item, new_data, changed_fields):
+        """Legacy 모드 아이템 변경 처리"""
+        # 기존 로직 유지
+        if hasattr(self.left_section, 'parent_page') and self.left_section.parent_page:
+            self.left_section.itemModified.emit(item, new_data, changed_fields)
+            self._trigger_analysis()
         
     """
     전체 데이터 새로고침 
@@ -61,7 +74,7 @@ class DataManager(QObject):
                     self.left_section.parent_page.update_split_view_analysis(current_data)
 
     """
-    엑셀 파일에서 데이터를 읽어와 테이블 업데이트
+    Legacy 모드 테이블 업데이트
     """
     def update_table_from_data(self):
         if self.left_section.data is None:
@@ -69,16 +82,16 @@ class DataManager(QObject):
 
         self.left_section.update_ui_with_signals()
 
-        # 데이터 변경 신호 발생
-        df = self.left_section.extract_dataframe()
-        self.left_section.viewDataChanged.emit(df)
+        # Legacy 모드에서만 시그널 발생
+        if not (hasattr(self.left_section, '_mvc_mode') and self.left_section._mvc_mode):
+            df = self.left_section.extract_dataframe()
+            self.left_section.viewDataChanged.emit(df)
+            self.preload_analyses()
+            self._trigger_analysis_legacy()
 
-        self.preload_analyses()
-
-        self._trigger_analysis()
 
     """
-    데이터 로드 후 사전 분석 실행
+    Legacy 모드 사전 분석
     """
     def preload_analyses(self):
         # 데이터가 없으면 건너뜀
@@ -157,20 +170,17 @@ class DataManager(QObject):
     아이템 삭제 처리 메서드 (ItemContainer에서 발생한 삭제를 처리)
     """
     def on_item_removed(self, item_or_id):
-        # MVC 컨트롤러 확인
-        has_controller = hasattr(self.left_section, 'controller') and self.left_section.controller is not None
+        # MVC 모드에서는 Controller가 처리
+        if (hasattr(self.left_section, '_mvc_mode') and 
+            self.left_section._mvc_mode and 
+            hasattr(self.left_section, 'controller') and 
+            self.left_section.controller):
+            print("DataManager: MVC 모드 - 삭제는 Controller가 처리")
+            return
         
-        # MVC 컨트롤러가 있으면 컨트롤러에서 처리
-        if has_controller:
-            # 컨트롤러에 연결이 제대로 되어 있는지 확인
-            if hasattr(self.left_section.controller, 'on_item_deleted'):
-                self.left_section.controller.on_item_deleted(item_or_id)
-                self._trigger_analysis()
-                return
-            else:
-                print("DEBUG: 컨트롤러에 on_item_deleted 메서드가 없음")
+        # Legacy 모드에서만 직접 처리
+        print("DataManager: Legacy 모드 - 직접 삭제 처리")
         
-        # 컨트롤러가 없거나 처리하지 않은 경우 기존 로직 사용
         if self.left_section.data is None:
             print("DEBUG: 데이터가 없음")
             return
@@ -178,13 +188,14 @@ class DataManager(QObject):
         # item_or_id가 문자열(ID)인 경우
         if isinstance(item_or_id, str):
             item_id = item_or_id
+
             print(f"DEBUG: ID로 삭제: {item_id}")
             mask = ItemKeyManager.create_mask_by_id(self.left_section.data, item_id)
             if mask.any():
                 self.left_section.data = self.left_section.data[~mask].reset_index(drop=True)
                 df = self.left_section.extract_dataframe()
                 self.left_section.viewDataChanged.emit(df)
-                self.left_section.mark_as_modified()
+                self.mark_as_modified()
 
                 self._trigger_analysis()
             else:
@@ -202,7 +213,7 @@ class DataManager(QObject):
                     self.left_section.data = self.left_section.data[~mask].reset_index(drop=True)
                     df = self.left_section.extract_dataframe()
                     self.left_section.viewDataChanged.emit(df)
-                    self.left_section.mark_as_modified()
+                    self.mark_as_modified()
                     return
             
             # ID가 없으면 Line/Time/Item으로 찾기
@@ -214,7 +225,7 @@ class DataManager(QObject):
                     self.left_section.data = self.left_section.data[~mask].reset_index(drop=True)
                     df = self.left_section.extract_dataframe()
                     self.left_section.viewDataChanged.emit(df)
-                    self.left_section.mark_as_modified()
+                    self.mark_as_modified()
                 else:
                     print(f"DEBUG: Line/Time/Item으로 아이템을 찾을 수 없음")
         else:
@@ -223,7 +234,7 @@ class DataManager(QObject):
         # 처리 완료 후 출하 분석 업데이트
         df = self.left_section.extract_dataframe()
         self.left_section.viewDataChanged.emit(df)
-        self.left_section.mark_as_modified()
+        self.mark_as_modified()
         
         # 출하 분석 업데이트 요청
         self._trigger_analysis()
@@ -238,9 +249,9 @@ class DataManager(QObject):
         # 데이터 처리는 제거 - 이미 컨트롤러에서 처리함
         # MVC 패턴에서는 뷰는 UI 렌더링만 담당, 데이터 처리는 컨트롤러에서
         
-        # 컨트롤러가 없는 경우에만 직접 처리
-        if not hasattr(self.left_section, 'controller') or not self.left_section.controller:
-            # 컨트롤러가 없는 경우 기본 처리 - 레거시 지원
+        # MVC 모드에서는 Controller가 데이터 처리
+        if not (hasattr(self.left_section, '_mvc_mode') and self.left_section._mvc_mode):
+            # Legacy 모드에서만 직접 처리
             df = self.left_section.extract_dataframe()
             self.left_section.viewDataChanged.emit(df)
 
@@ -259,209 +270,125 @@ class DataManager(QObject):
     def set_data_from_external(self, new_data):
         self.left_section.data = self.left_section._normalize_data_types(new_data.copy())
         self.left_section.original_data = self.left_section.data.copy()
-        self.left_section.update_table_from_data()
+        
+        # MVC/Legacy 모드에 따라 처리
+        if (hasattr(self.left_section, '_mvc_mode') and 
+            self.left_section._mvc_mode):
+            print("DataManager: MVC 모드 - 외부 데이터 설정 (UI만)")
+            self.left_section.update_ui_with_signals()  # 시그널 억제
+        else:
+            print("DataManager: Legacy 모드 - 외부 데이터 설정 (분석 포함)")
+            self.update_table_from_data()  # 기존 방식
 
     """
     모델로부터 UI 업데이트 - 이벤트 발생시키지 않음
     """
     def update_from_model(self, model_df=None):
         print("ModifiedLeftSection: update_from_model 호출")
+        # 🎯 MVC 모드: UI만 업데이트 (분석 없음)
+        if (hasattr(self.left_section, '_mvc_mode') and 
+            self.left_section._mvc_mode):
+            print("DataManager: MVC 모드 - UI만 업데이트 (분석 없음)")
+            self._mvc_update_ui_only(model_df)
+        else:
+            print("DataManager: Legacy 모드 - 분석 포함 업데이트")
+            self._legacy_full_update(model_df)
 
+    def _mvc_update_ui_only(self, model_df):
+        """🎯 MVC 모드: UI만 업데이트"""
+        if model_df is not None and not model_df.empty:
+            # 스크롤 위치 저장
+            scroll_position = self._save_scroll_position()
+            
+            # 데이터 설정
+            self.left_section.data = model_df
+            
+            # UI 업데이트만 (시그널 억제)
+            self.left_section.update_ui_with_signals()
+            self.left_section.apply_all_filters()
+            
+            # 스크롤 위치 복원
+            self._restore_scroll_position(scroll_position)
+
+    def _legacy_full_update(self, model_df):
+        """Legacy 모드: 분석 포함 전체 업데이트"""
+        # 기존 복잡한 로직 (변경 없음)
         current_selected_item_id = None
         if self.left_section.current_selected_item and hasattr(self.left_section.current_selected_item, 'item_data'):
             current_selected_item_id = self.left_section.current_selected_item.item_data.get('_id')
 
-        # ... UI 업데이트 ...
-
-        # 선택된 아이템으로 스크롤 복원
-        if current_selected_item_id:
-            QTimer.singleShot(100, lambda: self.left_section._scroll_to_selected_item(current_selected_item_id))
-
-        # 현재 검색 및 필터 상태 백업
+        # 현재 상태 백업
         current_search_active = self.left_section.search_widget.is_search_active()
         current_search_text = self.left_section.search_widget.get_search_text()
         current_filter_states = self.left_section.current_filter_states.copy()
         current_excel_filter_states = self.left_section.current_excel_filter_states.copy()
+        
+        # 스크롤 위치 저장
+        scroll_position = self._save_scroll_position()
 
-        # 현재 스크롤 위치 저장
-        current_scroll_position = None
-        if hasattr(self.left_section.grid_widget, 'scroll_area'):
-            current_scroll_position = {
-                'horizontal': self.left_section.grid_widget.scroll_area.horizontalScrollBar().value(),
-                'vertical': self.left_section.grid_widget.scroll_area.verticalScrollBar().value()
-            }
-            print(f"현재 스크롤 위치 저장: {current_scroll_position}")
-
-        # 매개변수가 없을 때 컨트롤러에서 데이터 가져오기
+        # 데이터 가져오기
         if model_df is None:
             if hasattr(self.left_section, 'controller') and self.left_section.controller:
                 model_df = self.left_section.controller.model.get_dataframe()
-                print("컨트롤러에서 데이터 가져옴")
 
         if model_df is None:
-            print("데이터가 없습니다.")
             return
 
-        # 타입 변환을 한 번에 처리
+        # 데이터 업데이트 및 UI 재구성
         self.left_section.data = self.left_section._normalize_data_types(model_df.copy())
+        self.left_section.update_ui_with_signals()  # viewDataChanged 발생
+        
+        # 상태 복원
+        self.left_section.current_filter_states = current_filter_states
+        self.left_section.current_excel_filter_states = current_excel_filter_states
+        
+        # 필터 재적용
+        if any(v for k, v in current_filter_states.items()):
+            self.left_section.apply_all_filters()
+        
+        # 검색 상태 복원
+        if current_search_active and current_search_text:
+            self.left_section.search_widget.last_search_text = current_search_text
+            self.left_section.search_widget.search_active = True
+            self.left_section.search_widget.clear_button.setEnabled(True)
+            self.left_section.search_manager.search_items(current_search_text)
+        
+        # 스크롤 위치 복원
+        self._restore_scroll_position(scroll_position)
+        
+        # Legacy 모드에서만 분석 실행
+        self._trigger_analysis()
 
-        # UI 업데이트 시작
-        if self.left_section.data is None or 'Line' not in self.left_section.data.columns or 'Time' not in self.left_section.data.columns:
-            print("데이터가 없거나 필수 컬럼이 없음")
-            return
-
+    def _save_scroll_position(self):
+        """스크롤 위치 저장"""
         try:
-            # 정렬 로직 적용 (update_ui_with_signals와 동일한 로직)
-            # 제조동 정보 추출 (Line 이름의 첫 글자가 제조동)
-            self.left_section.data['Building'] = self.left_section.data['Line'].str[0]  # 라인명의 첫 글자를 제조동으로 사용
+            if hasattr(self.left_section, 'grid_widget') and hasattr(self.left_section.grid_widget, 'scroll_area'):
+                h_bar = self.left_section.grid_widget.scroll_area.horizontalScrollBar()
+                v_bar = self.left_section.grid_widget.scroll_area.verticalScrollBar()
+                return {
+                    'horizontal': h_bar.value(),
+                    'vertical': v_bar.value()
+                }
+        except:
+            pass
+        return {'horizontal': 0, 'vertical': 0}
 
-            # 제조동별 생산량 계산 (정렬 목적)
-            building_production = self.left_section.data.groupby('Building')['Qty'].sum()
-
-            # 생산량 기준으로 제조동 정렬 (내림차순)
-            sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
-
-            # ---- 데이터프레임 정렬을 위한 전처리 ----
-            # 1. 제조동 정렬 순서 생성
-            building_order = {b: i for i, b in enumerate(sorted_buildings)}
-            self.left_section.data['Building_sort'] = self.left_section.data['Building'].apply(lambda x: building_order.get(x, 999))
-
-            # 2. 같은 제조동 내에서 라인명으로 정렬 (I_01 -> 01 형태로 변환)
-            self.left_section.data['Line_sort'] = self.left_section.data['Line'].apply(
-                lambda x: x.split('_')[1] if '_' in x else x
-            )
-
-            # 3. 최종 정렬 적용 (제조동 순위 -> 라인명 -> 시간)
-            self.left_section.data = self.left_section.data.sort_values(by=['Building_sort', 'Line_sort', 'Time']).reset_index(drop=True)
-
-            # 4. 임시 정렬 컬럼 제거
-            self.left_section.data = self.left_section.data.drop(columns=['Building_sort', 'Line_sort'], errors='ignore')
-
-            # 기존 아이템 모두 지우기
-            self.left_section.clear_all_items()
-
-            # Line과 Time 값 추출
-            lines = []
-            for building in sorted_buildings:
-                # 해당 제조동에 속하는 라인들 찾기
-                building_lines = [line for line in self.left_section.data['Line'].unique() if line.startswith(building)]
-                # 라인 이름 기준 오름차순 정렬
-                sorted_building_lines = sorted(building_lines)
-                # 정렬된 라인 추가
-                lines.extend(sorted_building_lines)
-
-            times = sorted(self.left_section.data['Time'].unique())
-
-            # 교대 시간 구분
-            shifts = {}
-            for time in times:
-                if int(time) % 2 == 1:
-                    shifts[time] = "Day"
-                else:
-                    shifts[time] = "Night"
-
-            # 라인별 교대 정보
-            line_shifts = {}
-            for line in lines:
-                line_shifts[line] = ["Day", "Night"]
-
-            # 행 헤더
-            self.left_section.row_headers = []
-            for line in lines:
-                for shift in ["Day", "Night"]:
-                    self.left_section.row_headers.append(f"{line}_({shift})")
-
-            # 그리드 설정
-            self.left_section.grid_widget.setupGrid(
-                rows=len(self.left_section.row_headers),
-                columns=len(self.left_section.days),
-                row_headers=self.left_section.row_headers,
-                column_headers=self.left_section.days,
-                line_shifts=line_shifts
-            )
-
-            # 데이터에서 아이템 생성하여 그리드에 배치
-            for _, row_data in self.left_section.data.iterrows():
-                if 'Line' not in row_data or 'Time' not in row_data:
-                    continue
-
-                line = row_data['Line']
-                time = row_data['Time']
-                shift = shifts[time]
-                day_idx = (int(time) - 1) // 2
-
-                if day_idx >= len(self.left_section.days):
-                    continue
-
-                day = self.left_section.days[day_idx]
-                row_key = f"{line}_({shift})"
-
-                # Item 정보가 있으면 추출하여 저장
-                if 'Item' in row_data and pd.notna(row_data['Item']):
-                    item_info = str(row_data['Item'])
-
-                    # MFG 정보가 있으면 수량 정보로 추가
-                    if 'Qty' in row_data and pd.notna(row_data['Qty']):
-                        item_info += f"    {row_data['Qty']}"
-
-                    try:
-                        # 그리드에 아이템 추가
-                        row_idx = self.left_section.row_headers.index(row_key)
-                        col_idx = day_idx
-
-                        # 전체 행 데이터를 아이템 데이터(dict 형태)로 전달
-                        item_full_data = row_data.to_dict()
-                        new_item = self.left_section.grid_widget.addItemAt(row_idx, col_idx, item_info, item_full_data)
-
-                        if new_item:
-                            item_code = item_full_data.get('Item', '')
-
-                            # 사전할당 아이템인 경우
-                            if item_code in self.left_section.pre_assigned_items:
-                                new_item.set_pre_assigned_status(True)
-
-                            # 출하 실패 아이템인 경우
-                            if item_code in self.left_section.shipment_failure_items:
-                                failure_info = self.left_section.shipment_failure_items[item_code]
-                                new_item.set_shipment_failure(True, failure_info.get('reason', 'Unknown reason'))
-
-                            # 자재부족 아이템인 경우
-                            if hasattr(self, 'current_shortage_items') and item_code in self.current_shortage_items:
-                                shortage_info = self.left_section.current_shortage_items[item_code]
-                                new_item.set_shortage_status(True, shortage_info)
-
-                    except ValueError as e:
-                        print(f"인덱스 찾기 오류: {e}")
-
-            # 스크롤 위치 복원
-            if current_scroll_position and hasattr(self.left_section.grid_widget, 'scroll_area'):
-                QTimer.singleShot(50, lambda: self.left_section._restore_scroll_position(current_scroll_position))
-
-            # 저장했던 필터 및 검색 상태 복원
-            self.current_filter_states = current_filter_states
-            self.current_excel_filter_states = current_excel_filter_states
-
-            # 필터 상태 즉시 재적용
-            if any(v for k, v in self.left_section.current_filter_states.items()):
-                self.left_section.apply_all_filters()
+    def _restore_scroll_position(self, position):
+        """스크롤 위치 복원"""
+        if not position:
+            return
+            
+        try:
+            if hasattr(self.left_section, 'grid_widget') and hasattr(self.left_section.grid_widget, 'scroll_area'):
+                h_bar = self.left_section.grid_widget.scroll_area.horizontalScrollBar()
+                v_bar = self.left_section.grid_widget.scroll_area.verticalScrollBar()
                 
-            # 검색이 활성화되었던 경우 검색 상태 복원
-            if current_search_active and current_search_text:
-                # SearchWidget 상태 복원
-                self.left_section.search_widget.last_search_text = current_search_text
-                self.left_section.search_widget.search_active = True
-                self.left_section.search_widget.clear_button.setEnabled(True)
-                
-                # 검색 실행
-                self.left_section.search_items(current_search_text)
+                QTimer.singleShot(50, lambda: h_bar.setValue(position['horizontal']))
+                QTimer.singleShot(50, lambda: v_bar.setValue(position['vertical']))
+        except:
+            pass
 
-            # 출하 분석도 즉시 업데이트
-            self._trigger_analysis()
 
-        except Exception as e:
-            print(f"UI 업데이트 오류: {e}")
-            import traceback
-            traceback.print_exc()
 
     
 

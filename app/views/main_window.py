@@ -321,7 +321,6 @@ class MainWindow(QMainWindow):
 
         if 'assignment_result' in results and results['assignment_result'] is not None:
             print("main_window : self.central_widget.addWidget(self.result_page)")
-            # self.result_page.left_section.update_data(results['assignment_result'])
             self.result_page.set_optimization_result(results)
         else :
             print('No assignment results available')

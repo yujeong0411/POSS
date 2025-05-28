@@ -15,10 +15,7 @@ from .manager.data_manager import DataManager
 from .manager.filter_manager import FilterManager
 from .manager.search_manager import SearchManager
 
-
 class ModifiedLeftSection(QWidget):
-    # 데이터 변경을 통합해서 한 번만 내보내는 시그널
-    viewDataChanged = pyqtSignal(pd.DataFrame)  # 수정 후 변경된 DataFrame을 전달
     item_selected = pyqtSignal(object, object)
     itemModified = pyqtSignal(object, dict, dict)
     cellMoved = pyqtSignal(object, dict, dict)
@@ -35,12 +32,17 @@ class ModifiedLeftSection(QWidget):
         self.time_periods = ['Day', 'Night']
         self.pre_assigned_items = set()  # 사전할당된 아이템 저장
         self.shipment_failure_items = {}  # 출하 실패 아이템 저장
-        self.init_ui()
+
+        # MVC 모드 추적
+        self.controller = None
+        self._mvc_mode = False
 
         # 매니저들 초기화 (순서 중요)
         self.search_manager = SearchManager(self)
         self.data_manager = DataManager(self) 
         self.filter_manager = FilterManager(self)
+
+        self.init_ui()
 
         # 매니저 간 시그널 연결
         self._connect_manager_signals()
@@ -159,16 +161,15 @@ class ModifiedLeftSection(QWidget):
         # 필터 위젯 추가 - Line과 Project 버튼 간격 조정 및 스타일 변경
         self.filter_widget = FilterWidget()
         self.filter_widget.filter_changed.connect(self.on_excel_filter_changed)
-        # self.filter_widget.setFixedWidth(400)
         control_layout.addWidget(self.filter_widget)
         control_layout.addStretch(1)
 
         # 검색 위젯 추가 (기존 검색 관련 UI 요소 대체)
         self.search_widget = SearchWidget(self)
-        self.search_widget.searchRequested.connect(self.search_items)
-        self.search_widget.searchCleared.connect(self.clear_search)
-        self.search_widget.nextResultRequested.connect(self.go_to_next_result)
-        self.search_widget.prevResultRequested.connect(self.go_to_prev_result)
+        self.search_widget.searchRequested.connect(self.search_manager.search_items)
+        self.search_widget.searchCleared.connect(self.search_manager.clear_search)
+        self.search_widget.nextResultRequested.connect(self.search_manager.go_to_next_result)
+        self.search_widget.prevResultRequested.connect(self.search_manager.go_to_prev_result)
         control_layout.addWidget(self.search_widget)
 
         # 통합 컨트롤 레이아웃을 메인 레이아웃에 추가
@@ -215,11 +216,28 @@ class ModifiedLeftSection(QWidget):
             }
         """)
         self.grid_widget.itemSelected.connect(self.on_grid_item_selected)  # 아이템 선택 이벤트 연결
-        self.grid_widget.itemDataChanged.connect(self.on_item_data_changed)  # 아이템 데이터 변경 이벤트 연결
-        self.grid_widget.itemCreated.connect(self.register_item)
-        self.grid_widget.itemRemoved.connect(self.on_item_removed)
-        self.grid_widget.itemCopied.connect(self.on_item_copied)  # 아이템 복사 이벤트 연결
+        self.grid_widget.itemDataChanged.connect(self.data_manager.on_item_data_changed)  # 아이템 데이터 변경 이벤트 연결
+        self.grid_widget.itemCreated.connect(self.data_manager.register_item)
+        self.grid_widget.itemRemoved.connect(self.data_manager.on_item_removed)
+        self.grid_widget.itemCopied.connect(self.data_manager.on_item_copied)  # 아이템 복사 이벤트 연결
         main_layout.addWidget(self.grid_widget, 1)
+
+    """
+    컨트롤러 설정 - MVC 모드 활성화
+    """
+    def set_controller(self, controller):
+        self.controller = controller
+        self._mvc_mode = True
+        print("ModifiedLeftSection: MVC 모드 활성화")
+
+    """
+    검증기 설정
+    """
+    def set_validator(self, validator):
+        self.validator = validator
+        if hasattr(self.grid_widget, 'set_validator'):
+            self.grid_widget.set_validator(validator)
+        print("ModifiedLeftSection: 검증기 설정 완료")
 
     """
     매니저들 간의 시그널 연결
@@ -233,6 +251,75 @@ class ModifiedLeftSection(QWidget):
         self.legend_widget.filter_changed.connect(self.filter_manager.apply_legend_filters)
         print("[LeftSection] 매니저 시그널 연결 완료")
 
+    def initialize_with_data(self, df, analysis_results):
+        """🎯 초기화 - 분석 결과와 함께 (MVC 전용)"""
+        print("LeftSection: 분석 결과와 함께 초기화")
+        
+        self.data = df
+        self.original_data = df.copy()
+        
+        # UI 구성 : 아이템 생성
+        self.update_ui_with_signals()
+        
+        # 분석 결과 적용 (재분석 없음)
+        self._apply_analysis_results(analysis_results)
+
+    def update_ui_only(self, df, analysis_results):
+        """🎯 UI만 업데이트 - 분석 없음 (MVC 전용)"""
+        print("LeftSection: UI만 업데이트 (분석 없음)")
+        
+        # 스크롤 위치 저장
+        scroll_position = self._save_scroll_position()
+        
+        # 데이터 설정
+        self.data = df
+        
+        # UI 업데이트 (시그널 억제) : 아이템 재생성
+        self.update_ui_with_signals()
+        self.apply_all_filters()
+        
+        # 분석 결과 적용 (재분석 없음)
+        self._apply_analysis_results(analysis_results)
+        
+        # 스크롤 위치 복원
+        self._restore_scroll_position(scroll_position)
+
+    def _apply_analysis_results(self, analysis_results):
+        """🎯 분석 결과만 적용 - 재분석 없음"""
+        if not analysis_results:
+            return
+        
+         # 사전할당 상태 적용
+        if hasattr(self, 'pre_assigned_items') and self.pre_assigned_items:
+            print(f"LeftSection: 사전할당 상태 적용 - {len(self.pre_assigned_items)}개 아이템")
+            self._apply_pre_assigned_status_to_items()
+        
+        # 자재 부족 결과 적용
+        if 'material' in analysis_results:
+            material_data = analysis_results['material']
+            if 'shortage_results' in material_data:
+                self.set_current_shortage_items(material_data['shortage_results'])
+        
+        # 출하 실패 결과 적용 (필요시)
+        if 'shipment' in analysis_results:
+            print("LeftSection: 출하 실패 상태 적용")
+            shipment_data = analysis_results['shipment']
+            if 'failure_items' in shipment_data:
+                self.set_shipment_failure_items(shipment_data['failure_items'])
+            elif shipment_data.get('analyzed'):
+                # 출하 분석이 완료되었으면 ResultPage에서 실패 정보 가져오기
+                if (hasattr(self, 'parent_page') and 
+                    self.parent_page and 
+                    hasattr(self.parent_page, 'shipment_widget') and
+                    self.parent_page.shipment_widget):
+                    
+                    # Shipment 위젯에서 실패 정보 가져오기
+                    failure_items = getattr(self.parent_page.shipment_widget, 'failure_items', {})
+                    if failure_items:
+                        self.set_shipment_failure_items(failure_items)
+
+        print("LeftSection: 분석 결과 적용 완료")
+        
     """
     데이터프레임 타입 정규화
     """
@@ -268,21 +355,7 @@ class ModifiedLeftSection(QWidget):
             if self.search_widget.is_search_active():
                 search_text = self.search_widget.get_search_text()
                 if search_text:
-                    self.apply_search_to_item(item, search_text)
-
-    """
-    종합적인 필터 적용 
-    - FilterManager로 위임
-    """
-    def apply_standard_filters(self):
-        return self.filter_manager.apply_standard_filters()
-
-    """
-    상태선만 효율적으로 업데이트 
-    - FilterManager로 위임
-    """
-    def update_status_lines_only(self, filter_states):
-        return self.filter_manager.update_status_lines_only(filter_states)
+                    self.data_manager.apply_search_to_item(item, search_text)
 
     """
     아이템의 상태선 업데이트 
@@ -290,13 +363,6 @@ class ModifiedLeftSection(QWidget):
     """
     def update_item_status_line_visibility(self, item):
         return self.filter_manager.update_item_status_line_visibility(item)
-
-    """
-    엑셀 필터를 고려한 아이템 표시 여부 
-    - FilterManager로 위임
-    """
-    def should_show_item_excel_filter(self, item):
-        return self.filter_manager.should_show_item_excel_filter(item)
 
     """
     엑셀 스타일 필터 상태 변경 처리
@@ -313,12 +379,19 @@ class ModifiedLeftSection(QWidget):
     """
     def apply_all_filters(self):
         print("=== [DEBUG] apply_all_filters 호출 ===")
-        print("→ Step 1: 엑셀 필터 적용")
-        self.filter_manager.apply_filters(self.current_excel_filter_states)
+        excel_filter_active = (
+        any(self.current_excel_filter_states.get('line', {}).values()) or 
+        any(self.current_excel_filter_states.get('project', {}).values())
+        )
+        
+        if excel_filter_active:
+            print("→ Step 1: 엑셀 필터 적용 (그리드 재구성)")
+            self.filter_manager.apply_filters(self.current_excel_filter_states)
+        else:
+            print("→ Step 1: 엑셀 필터 비활성화, 그리드 재구성 스킵")
 
-        # 범례 필터도 명시적으로 적용
         print("→ Step 2: 범례 필터 적용")
-        self.filter_manager.apply_legend_filters(self.current_filter_states)
+        self.filter_manager._apply_legend_filters_only()
 
         # 검색이 활성화된 경우 검색 재적용
         if hasattr(self, 'search_widget') and self.search_widget.is_search_active():
@@ -344,14 +417,7 @@ class ModifiedLeftSection(QWidget):
         return self.filter_manager._show_empty_grid()
     
     """
-    범례 필터만 적용 (상태선 표시)
-    - 매니저 위임
-    """
-    def apply_legend_filters_only(self):
-        return self.filter_manager._apply_legend_filters_only()
-    
-    """
-    범례 위젯에서 필터가 변경될 때 호출
+    범례 위젯에서 필터가 변경될 때 호출 - MVC 모드 고려
     """
     def on_filter_changed_dict(self, filter_states):
         if self.current_filter_states == filter_states:
@@ -392,22 +458,12 @@ class ModifiedLeftSection(QWidget):
     상태 필터 활성화 요청 처리
     """
     def on_filter_activation_requested(self, status_type):
-    
         # 출하 상태 필터가 활성화된 경우
         if status_type == 'shipment':
-            self.trigger_shipment_analysis()
+            self.data_manager._trigger_analysis()
         
         # 필터 상태 업데이트 후 필터 적용
         self.current_filter_states[status_type] = True
-        self.apply_all_filters()
-    
-    """
-    필터 활성화 요청 처리
-    """
-    def on_filter_activation_requested(self, status_type):
-        # 출하 상태 필터가 활성화된 경우
-        if status_type == 'shipment':
-            self.trigger_shipment_analysis()
     
     """
     데이터 로드 후 필터 데이터 업데이트
@@ -483,62 +539,6 @@ class ModifiedLeftSection(QWidget):
                     container.update_visibility()
                 elif hasattr(container, 'adjustSize'):
                     container.adjustSize()
-
-    """
-    검색 초기화 (SearchWidget의 searchCleared 시그널에 연결)
-    - 매니저 위임
-    """
-    def clear_search(self):
-        return self.search_manager.clear_search()
-
-    """
-    이전 검색 결과로 이동 (SearchWidget의 prevResultRequested 시그널에 연결)
-    - 매니저 위임
-    """
-    def go_to_prev_result(self):
-        return self.search_manager.go_to_prev_result()
-
-    """
-    다음 검색 결과로 이동 (SearchWidget의 nextResultRequested 시그널에 연결)
-    - 매니저 위임
-    """
-    def go_to_next_result(self):
-        return self.search_manager.go_to_next_result()
-    
-    """
-    선택된 검색 결과를 포커스하고 강조 표시
-    - 매니저 위임
-    """
-    def select_current_result(self):
-        return self.search_manager.select_current_result()
-    
-    """
-    검색 결과 상태 업데이트
-    - 매니저 위임
-    """
-    def update_result_navigation(self):
-        return self.search_manager.update_result_navigation()
-
-    """
-    검색 결과 강조 상태 업데이트 
-    - 매니저 위임
-    """
-    def _update_search_highlight(self, old_index, new_index):
-        return self.search_manager._update_search_highlight(old_index, new_index)
-
-    """
-    현재 검색 결과로 스크롤 
-    - 매니저 위임
-    """
-    def _scroll_to_current_result(self):
-        return self.search_manager._scroll_to_current_result()
-    
-    """
-    아이템에 검색 조건 적용
-    - 매니저 위임
-    """
-    def apply_search_to_item(self, item, search_text):
-        return self.data_manager.apply_search_to_item(item, search_text)
     
     """
     아이템이 검색어와 일치하는지 확인 
@@ -563,13 +563,6 @@ class ModifiedLeftSection(QWidget):
 
         # 선택 시그널 방출
         self.item_selected.emit(selected_item, container)
-
-    """
-    검색 항목을 재검색하되 기존 검색 결과와 선택 상태를 유지
-    - 매니저 위임
-    """
-    def search_items(self, search_text):
-        return self.search_manager.search_items(search_text)
 
     def search_items_without_clear(self):
         search_text = self.search_widget.get_search_text()
@@ -603,7 +596,7 @@ class ModifiedLeftSection(QWidget):
                                     })
 
                                 # 검색 포커스 설정
-                                self.apply_search_to_item(item, search_text)
+                                self.data_manager.apply_search_to_item(item, search_text)
 
                         except RuntimeError:
                             invalid_items.append(item)
@@ -635,25 +628,11 @@ class ModifiedLeftSection(QWidget):
             else:
                 self.current_result_index = 0
 
-            self.select_current_result()
-            self.update_result_navigation()
+            self.search_manager.select_current_result()
+            self.search_manager.update_result_navigation()
         else:
             # 검색 결과 없음 표시
             self.search_widget.set_result_status(0, 0)
-
-    """
-    아이템 데이터가 변경되면 호출되는 함수
-    - manager 위임
-    """
-    def on_item_data_changed(self, item, new_data, changed_fields=None):
-        return self.data_manager.on_item_data_changed(item, new_data, changed_fields)
-    
-    """
-    데이터 변경 시 분석 트리거
-    - manager 위임
-    """
-    def trigger_shipment_analysis(self):
-        return self.data_manager._trigger_analysis()
 
     """
     위치 변경 처리 로직 분리
@@ -685,7 +664,7 @@ class ModifiedLeftSection(QWidget):
                     print(f"아이템 데이터 업데이트 실패: {error_message}")
                     return
 
-            self.mark_as_modified()
+            self.data_manager.mark_as_modified()
             self.itemModified.emit(item, new_data)
 
     """
@@ -747,7 +726,7 @@ class ModifiedLeftSection(QWidget):
             new_item = self.grid_widget.addItemAt(new_row_idx, new_col_idx, item_text, new_data, drop_index)
 
             if new_item:
-                self.mark_as_modified()
+                self.data_manager.mark_as_modified()
                 
                 # 아이템 상태 복원
                 self._restore_item_states(new_item, new_data)
@@ -776,27 +755,6 @@ class ModifiedLeftSection(QWidget):
         if hasattr(self, 'current_shortage_items') and item_code in self.current_shortage_items:
             shortage_info = self.current_shortage_items[item_code]
             new_item.set_shortage_status(True, shortage_info)
-
-    """
-    MVC 컨트롤러 설정
-    """
-    def set_controller(self, controller):
-        self.controller = controller
-        print("MVC 컨트롤러가 설정되었습니다")
-
-        # 모델 변경 시그널 연결
-        if self.controller and hasattr(self.controller.model, 'modelDataChanged'):
-            self.controller.model.modelDataChanged.connect(self.update_from_model)
-            print("ModifiedLeftSection: 모델 변경 시그널 연결 완료")
-
-    """
-    검증기 설정
-    """
-    def set_validator(self, validator):
-        self.validator = validator
-        if hasattr(self.grid_widget, 'set_validator'):
-            self.grid_widget.set_validator(validator)
-        print("검증기가 설정되었습니다")
         
 
     """
@@ -808,7 +766,7 @@ class ModifiedLeftSection(QWidget):
             print("[ERROR] parent_page 참조가 없습니다.")
             EnhancedMessageBox.show_validation_error(
                 self, 
-                "오류", 
+                "Error", 
                 "페이지 참조가 설정되지 않았습니다."
             )
             return
@@ -819,8 +777,13 @@ class ModifiedLeftSection(QWidget):
         )
         
         if file_path:
-            self.parent_page.load_result_file(file_path)
-
+            if self._mvc_mode:
+                print("LeftSection: MVC 모드 - ResultPage를 통한 파일 로드")
+                self.parent_page.load_result_file(file_path)
+            else:
+                print("LeftSection: Legacy 모드 - 직접 파일 로드")
+                # Legacy 처리
+                pass
 
     """
     아이템 목록과 그리드 초기화하는 메서드
@@ -832,23 +795,9 @@ class ModifiedLeftSection(QWidget):
             self.grid_widget.clearAllItems()
 
     """
-    엑셀 파일에서 데이터를 읽어와 테이블 업데이트
-    - 매니저 위임
-    """
-    def update_table_from_data(self):
-        return self.data_manager.update_table_from_data()
-
-    """
-    데이터 로드 후 사전 분석 실행
-    - 매니저 위임
-    """
-    def preload_analyses(self):
-        return self.data_manager.update_table_from_data()
-
-    """
     Line과 Time으로 데이터 그룹화하고 개별 아이템으로 표시
+    UI 업데이트 - MVC 모드에서 시그널 발생 제어
     """
-
     def update_ui_with_signals(self):
         if self.data is None or 'Line' not in self.data.columns or 'Time' not in self.data.columns:
             EnhancedMessageBox.show_validation_error(self, "Grouping Failed",
@@ -1003,9 +952,13 @@ class ModifiedLeftSection(QWidget):
             else:
                 self.grouped_data = self.data.groupby(['Line', 'Time']).first().reset_index()
 
-            # 데이터 변경 신호 발생
-            df = self.extract_dataframe()
-            self.viewDataChanged.emit(df)
+            # MVC 모드에서는 viewDataChanged 시그널 발생 안함
+            if not self._mvc_mode:
+                df = self.extract_dataframe()
+                self.viewDataChanged.emit(df)
+                print("LeftSection: Legacy 모드 - viewDataChanged 시그널 발생")
+            else:
+                print("LeftSection: MVC 모드 - viewDataChanged 시그널 억제")
 
             # *** 중요: 필터 데이터를 그리드 설정 직후에 즉시 업데이트 ***
             # 정렬된 라인 순서를 직접 전달
@@ -1042,13 +995,6 @@ class ModifiedLeftSection(QWidget):
                                                      f"An error occurred during data grouping.\n{str(e)}")
 
     """
-    외부에서 데이터 설정
-    - 매니저 위임
-    """
-    def set_data_from_external(self, new_data):
-        return self.data_manager.set_data_from_external(new_data)
-
-    """
     원본 데이터로 되돌리기
     """
     def reset_to_original(self):
@@ -1064,8 +1010,8 @@ class ModifiedLeftSection(QWidget):
 
         if reply:
             # 컨트롤러 연결
-            if hasattr(self, 'controller') and self.controller:
-                print("컨트롤러를 통해 리셋 요청")
+            if self._mvc_mode and self.controller:
+                print("LeftSection: MVC 모드 - 컨트롤러를 통해 리셋")
                 self.controller.reset_data()
                 
                 # Reset 버튼 비활성화
@@ -1077,9 +1023,9 @@ class ModifiedLeftSection(QWidget):
                 )
             else: 
                 # 레거시 방식
-                # 원본 데이터로 복원
+                print("LeftSection: Legacy 모드 - 직접 리셋")
                 self.data = self.original_data.copy()
-                self.update_table_from_data()
+                self.data_manager.update_table_from_data()
 
                 # Reset 버튼 비활성화
                 self.reset_button.setEnabled(False)
@@ -1088,13 +1034,45 @@ class ModifiedLeftSection(QWidget):
                 EnhancedMessageBox.show_validation_success(
                     self, "Reset Complete", "Data has been successfully reset to the original values."
                 )
-    
-    """
-    데이터가 수정되었음을 표시하는 메서드
-    - 매니저 위임
-    """
-    def mark_as_modified(self):
-        return self.data_manager.mark_as_modified()
+
+    def _apply_pre_assigned_status_to_items(self):
+        """🔧 그리드의 모든 아이템에 사전할당 상태 적용"""
+        if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
+            print("LeftSection: 그리드 위젯이 없음 - 사전할당 상태 적용 스킵")
+            return
+        
+        applied_count = 0
+        total_items = 0
+        
+        for row_containers in self.grid_widget.containers:
+            for container in row_containers:
+                for item in container.items:
+                    total_items += 1
+                    if hasattr(item, 'item_data') and item.item_data and 'Item' in item.item_data:
+                        item_code = item.item_data['Item']
+                        
+                        # 해당 아이템이 사전할당 목록에 있는지 확인
+                        if item_code in self.pre_assigned_items:
+                            item.set_pre_assigned_status(True)
+                            applied_count += 1
+                        else:
+                            item.set_pre_assigned_status(False)
+        
+        print(f"LeftSection: 사전할당 상태 적용 완료 - {applied_count}/{total_items}개 아이템")
+
+    def set_pre_assigned_items(self, pre_assigned_items):
+        """🔧 사전할당 아이템 목록 설정 및 즉시 적용"""
+        print(f"LeftSection: 사전할당 아이템 설정 - {len(pre_assigned_items)}개")
+        self.pre_assigned_items = set(pre_assigned_items)
+        
+        # 그리드가 이미 생성되어 있으면 즉시 적용
+        if (hasattr(self, 'grid_widget') and 
+            hasattr(self.grid_widget, 'containers') and 
+            self.grid_widget.containers):
+            print("LeftSection: 그리드 존재 - 사전할당 상태 즉시 적용")
+            self._apply_pre_assigned_status_to_items()
+        else:
+            print("LeftSection: 그리드 없음 - 나중에 적용 예정")
 
     """
     현재 자재부족 아이템 정보 저장
@@ -1157,6 +1135,8 @@ class ModifiedLeftSection(QWidget):
     모든 상태 정보를 현재 아이템들에 적용
     """
     def apply_all_states(self):
+        print("[DEBUG] apply_all_states 호출됨")
+    
         if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
             return
         
@@ -1195,10 +1175,10 @@ class ModifiedLeftSection(QWidget):
                             else:
                                 item.set_shortage_status(False)
 
+    """
+    안전한 필터 적용 - 드래그앤드롭 후 호출
+    """
     def apply_filters_safely(self):
-        """
-        안전한 필터 적용 - 드래그앤드롭 후 호출
-        """
         try:
             # 현재 데이터가 있는지 확인
             if not hasattr(self, 'data') or self.data is None or self.data.empty:
@@ -1206,20 +1186,22 @@ class ModifiedLeftSection(QWidget):
                 return
 
             # 범례 필터만 적용 (엑셀 필터는 건드리지 않음)
-            self.apply_legend_filters_only()
+            self.filter_manager.apply_legend_filters_only()
 
             # 검색이 활성화된 경우에만 검색 상태 복원
             if hasattr(self, 'search_widget') and self.search_widget.is_search_active():
                 search_text = self.search_widget.get_search_text()
                 if search_text:
-                    QTimer.singleShot(50, lambda: self.search_items(search_text))
+                    QTimer.singleShot(50, lambda: self.search_manager.search_items(search_text))
 
         except Exception as e:
             print(f"안전한 필터 적용 중 오류: {e}")
             import traceback
             traceback.print_exc()
 
-    """범례 위젯에서 필터가 변경될 때 호출"""
+    """
+    범례 위젯에서 필터가 변경될 때 호출
+    """
     def on_filter_changed(self, status_type, is_checked):
         # 이전 상태와 동일하면 불필요한 처리 방지
         if self.current_filter_states.get(status_type) == is_checked:
@@ -1236,36 +1218,20 @@ class ModifiedLeftSection(QWidget):
             self.filter_activation_requested.emit(status_type)
 
     """
-    아이템 삭제 처리 메서드 (ItemContainer에서 발생한 삭제를 처리)
-    - 매니저 위임
-    """
-    def on_item_removed(self, item_or_id):
-        return self.data_manager.on_item_removed(item_or_id)
-
-    """
     현재 뷰에 로드된 DataFrame(self.data)의 사본 반환
     viewDataChanged 신호를 뿌릴 때 사용 
     """
     def extract_dataframe(self) -> pd.DataFrame:
-        if hasattr(self, 'data') and isinstance(self.data, pd.DataFrame):
-            return self._normalize_data_types(self.data.copy())
+        if self._mvc_mode and self.controller:
+            # MVC 모드에서는 모델에서 데이터 가져오기
+            return self.controller.get_current_data()
         else:
-            return pd.DataFrame()
-        
-    """
-    모델로부터 UI 업데이트 : 이벤트 발생시키지 않음
-    - 매니저 위임
-    """
-    def update_from_model(self, model_df=None):
-        return self.data_manager.update_from_model(model_df)
-
-    """
-    복사된 아이템 처리
-    - 매니저 위임
-    """
-    def on_item_copied(self, item, data):
-        return self.data_manager.on_item_copied(item, data)
-
+            # Legacy 모드에서는 직접 데이터 반환
+            if hasattr(self, 'data') and isinstance(self.data, pd.DataFrame):
+                return self._normalize_data_types(self.data.copy())
+            else:
+                return pd.DataFrame()
+ 
     """
     출하 실패 아이템 정보 설정
     """
@@ -1376,8 +1342,10 @@ class ModifiedLeftSection(QWidget):
 
             print(f"아이템으로 스크롤 요청 완료: {item_id}")
 
+    """
+    직접 스크롤 위치 설정 
+    """
     def _force_scroll_to_item(self, container, item):
-        """직접 스크롤 위치 설정 (더 강력한 방법)"""
         if not container or not item or not hasattr(self.grid_widget, 'scroll_area'):
             return
 
@@ -1411,3 +1379,31 @@ class ModifiedLeftSection(QWidget):
                     break
         except Exception as e:
             print(f"강제 스크롤 중 오류 발생: {str(e)}")
+
+    def _save_scroll_position(self):
+        """스크롤 위치 저장"""
+        try:
+            if hasattr(self, 'grid_widget') and hasattr(self.grid_widget, 'scroll_area'):
+                h_bar = self.grid_widget.scroll_area.horizontalScrollBar()
+                v_bar = self.grid_widget.scroll_area.verticalScrollBar()
+                return {
+                    'horizontal': h_bar.value(),
+                    'vertical': v_bar.value()
+                }
+        except:
+            pass
+        return {'horizontal': 0, 'vertical': 0}
+
+    def _restore_scroll_position(self, position):
+        """스크롤 위치 복원"""
+        try:
+            if hasattr(self, 'grid_widget') and hasattr(self.grid_widget, 'scroll_area'):
+                h_bar = self.grid_widget.scroll_area.horizontalScrollBar()
+                v_bar = self.grid_widget.scroll_area.verticalScrollBar()
+                
+                if 'horizontal' in position:
+                    h_bar.setValue(position['horizontal'])
+                if 'vertical' in position:
+                    v_bar.setValue(position['vertical'])
+        except:
+            pass

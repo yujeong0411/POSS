@@ -160,8 +160,8 @@ class SearchManager(QObject):
             if results:
                 self.left_section.search_widget.set_result_status(1, len(results))
                 # 첫 번째 결과 선택
-                if hasattr(self.left_section, 'select_current_result'):
-                    self.left_section.select_current_result()
+                if hasattr(self, 'select_current_result'):
+                    self.select_current_result()
             else:
                 self.left_section.search_widget.set_result_status(0, 0)
     
@@ -184,12 +184,6 @@ class SearchManager(QObject):
                     item.set_search_focus(False)
                 if hasattr(item, 'set_search_current'):
                     item.set_search_current(False)
-
-                # # 강제 업데이트
-                # if hasattr(item, 'repaint'):
-                #     item.repaint()
-                # if hasattr(item, 'update'):
-                #     item.update()
 
             # 선택 상태 초기화
             if hasattr(self.left_section.grid_widget, 'clear_all_selections'):
@@ -222,11 +216,11 @@ class SearchManager(QObject):
             self.left_section.current_result_index -= 1
 
             # 아이템 강조 상태 업데이트 (이전 아이템 -> 일반 검색, 현재 아이템 -> 강조)
-            self.left_section._update_search_highlight(old_index, self.left_section.current_result_index)
+            self._update_search_highlight(old_index, self.left_section.current_result_index)
 
             # 현재 결과 표시 및 네비게이션 업데이트
-            self.left_section._scroll_to_current_result()
-            self.left_section.update_result_navigation()
+            self._scroll_to_current_result()
+            self.update_result_navigation()
         except Exception as e:
             print(f"이전 결과 이동 오류: {str(e)}")
 
@@ -245,15 +239,13 @@ class SearchManager(QObject):
             self.left_section.current_result_index += 1
 
             # 아이템 강조 상태 업데이트 (이전 아이템 -> 일반 검색, 현재 아이템 -> 강조)
-            self.left_section._update_search_highlight(old_index, self.left_section.current_result_index)
+            self._update_search_highlight(old_index, self.left_section.current_result_index)
 
             # 현재 결과 표시 및 네비게이션 업데이트
-            self.left_section._scroll_to_current_result()
-            self.left_section.update_result_navigation()
+            self._scroll_to_current_result()
+            self.update_result_navigation()
         except Exception as e:
             print(f"다음 결과 이동 오류: {str(e)}")
-
-
 
     """
     선택된 검색 결과를 포커스하고 강조 표시

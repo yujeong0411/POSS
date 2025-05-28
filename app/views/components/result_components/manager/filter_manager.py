@@ -15,7 +15,6 @@ class FilterManager(QObject):
     외부 호출용 메인 필터 적용 메서드
     """
     def apply_filters(self, filter_states):
-        print(f"[FilterManager] 필터 적용: {filter_states}")
         
         # 현재 활성화된 라인 필터 확인
         active_lines = []
@@ -46,16 +45,12 @@ class FilterManager(QObject):
         
         self.filter_applied.emit()
 
-        print("[FilterManager] 필터 적용 완료")
-
     """
     범례 필터 적용 (상태선 표시)
     """
     def apply_legend_filters(self, filter_states):
-        print(f"[FilterManager] 범례 필터 적용: {filter_states}")
         self.left_section.current_filter_states = filter_states
         self._apply_legend_filters_only()
-        self.filter_applied.emit()
 
     """
     엑셀 필터를 고려한 아이템 표시 여부
@@ -186,6 +181,7 @@ class FilterManager(QObject):
                 item.show_shipment_line = change['shipment']
             if hasattr(item, 'show_pre_assigned_line'):
                 item.show_pre_assigned_line = change['pre_assigned']
+
             # 상태선 업데이트
             item.update()
 
@@ -202,11 +198,11 @@ class FilterManager(QObject):
                 # 선택 위치 업데이트
                 if self.left_section.current_result_index < 0 or self.left_section.current_result_index >= len(self.left_section.search_results):
                     self.left_section.current_result_index = 0
-                self.left_section.update_result_navigation()
+                self.left_section.search_manager.update_result_navigation()
 
                 # 선택된 검색 결과로 스크롤
                 if 0 <= self.current_result_index < len(self.search_results):
-                    self.left_section.select_current_result()
+                    self.left_section.search_manager.select_current_result()
             else:
                 # 검색 결과 없음 표시
                 self.left_section.search_widget.set_result_status(0, 0)
@@ -327,15 +323,12 @@ class FilterManager(QObject):
                     project_mask = project_mask | nan_mask
                 filtered_data = filtered_data[project_mask]
 
-            print(f"DEBUG: 필터링 후 데이터 행 수: {len(filtered_data)}")
-
             if filtered_data.empty:
                 self._show_empty_grid()
                 return
 
             #  필터링된 데이터에서 실제 존재하는 라인만 추출 
             actual_lines_in_filtered_data = filtered_data['Line'].unique().tolist()
-            print(f"DEBUG: 필터링된 데이터에 실제 존재하는 라인들: {actual_lines_in_filtered_data}")
 
             # 라인 정렬 (필터링된 데이터의 라인만 사용)
             filtered_data['Building'] = filtered_data['Line'].str[0]
@@ -354,8 +347,6 @@ class FilterManager(QObject):
             if remaining_lines:
                 sorted_active_lines.extend(sorted(remaining_lines))
 
-            print(f"DEBUG: 최종 표시할 라인들: {sorted_active_lines}")
-
             # 교대 정보 (실제 데이터가 있는 라인만)
             line_shifts = {}
             for line in sorted_active_lines:
@@ -366,8 +357,6 @@ class FilterManager(QObject):
             for line in sorted_active_lines:
                 for shift in ["Day", "Night"]:
                     filtered_row_headers.append(f"{line}_({shift})")
-
-            print(f"DEBUG: 최종 행 헤더: {filtered_row_headers}")
 
             # SearchManager에 그리드 재구성 알림 (그리드 재구성 직전에)
             if hasattr(self.left_section, 'search_manager'):
@@ -443,6 +432,7 @@ class FilterManager(QObject):
                         # 상태 적용
                         if item_code in self.left_section.pre_assigned_items:
                             new_item.set_pre_assigned_status(True)
+                            # print(f"[DEBUG] 사전할당 상태 복원: {item_code}")
 
                         if item_code in self.left_section.shipment_failure_items:
                             failure_info = self.left_section.shipment_failure_items[item_code]
@@ -451,6 +441,9 @@ class FilterManager(QObject):
                         if hasattr(self.left_section, 'current_shortage_items') and item_code in self.left_section.current_shortage_items:
                             shortage_info = self.left_section.current_shortage_items[item_code]
                             new_item.set_shortage_status(True, shortage_info)
+
+            # 그리드 재구성 후 즉시 모든 상태 복원 
+            self.left_section.apply_all_states()
 
             # 범례 필터도 적용
             self._apply_legend_filters_only()
@@ -493,18 +486,14 @@ class FilterManager(QObject):
     범례 필터만 적용 (상태선 표시)
     """
     def _apply_legend_filters_only(self):
-        print("=== [DEBUG] 범례 필터 적용 시작 ===")
-        print(f"→ current_filter_states: {self.left_section.current_filter_states}")
         if not hasattr(self.left_section, 'grid_widget') or not hasattr(self.left_section.grid_widget, 'containers'):
-            print("→ 그리드 위젯이 없음")
+            print("그리드 위젯이 없음")
             return
 
         # 범례 필터 상태 확인
         shortage_filter = self.left_section.current_filter_states.get('shortage', False)
         shipment_filter = self.left_section.current_filter_states.get('shipment', False)
         pre_assigned_filter = self.left_section.current_filter_states.get('pre_assigned', False)
-
-        print(f"→ 필터 상태 - shortage: {shortage_filter}, shipment: {shipment_filter}, pre_assigned: {pre_assigned_filter}")
 
         # 모든 아이템에 상태선 적용
         for row_containers in self.left_section.grid_widget.containers:
@@ -521,7 +510,6 @@ class FilterManager(QObject):
                     # 상태선 업데이트
                     item.update()
         
-        print("=== [DEBUG] 범례 필터 적용 완료 ===")
 
 
     

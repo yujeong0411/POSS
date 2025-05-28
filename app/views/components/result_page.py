@@ -42,7 +42,10 @@ class ResultPage(QWidget):
         self.utilization_data = None # 가동률 데이터 저장 변수
         self.material_analyzer = None  # 자재 부족량 분석기 추가
         self.pre_assigned_items = set()  # 사전할당된 아이템 저장
-        self.controller = None 
+
+        # MVC 모드 구분
+        self.controller = None
+        self._mvc_mode = False  # MVC 패턴 사용 여부
 
         # KPI Calculator 
         self.kpi_score = KpiScore(self.main_window)
@@ -58,7 +61,6 @@ class ResultPage(QWidget):
         self.material_widget = None  # MaterialWidget 참조 추가
         self.shortage_items_table = None
         self.viz_canvases = []
-
 
         self.init_ui()
         print("\n==== ResultPage: connect_signals 호출 시작 ====")
@@ -126,8 +128,8 @@ class ResultPage(QWidget):
         self.left_section = ModifiedLeftSection()
         self.left_section.parent_page = self  # 명시적 참조 설정
 
-        # 시그널 연결
-        self.left_section.viewDataChanged.connect(self.on_data_changed)  # 데이터 변경 시그널 연결
+        # # 시그널 연결
+        # self.left_section.viewDataChanged.connect(self.on_data_changed)  # 데이터 변경 시그널 연결
 
         left_layout.addWidget(self.left_section)
         
@@ -281,18 +283,578 @@ class ResultPage(QWidget):
 
 
     """
-    컨트롤러 설정
+    컨트롤러 설정 - MVC 모드 활성화
     """
     def set_controller(self, controller, defer_signal=False):
         self.controller = controller
-        print("ResultPage: 컨트롤러 설정됨")
-        print("ResultPage: 컨트롤러 설정됨")
+        self._mvc_mode = True  # MVC 모드 활성화
+        print("ResultPage: MVC 모드 활성화됨")
 
         # defer_signal=True일 경우, 연결을 나중에 호출자가 수동으로 하도록 함
-        if not defer_signal:
-            if hasattr(controller.model, 'modelDataChanged'):
+        if not defer_signal and hasattr(controller.model, 'modelDataChanged'):
+                # MVC 모드에서는 Controller를 통해서만 업데이트 받음
                 controller.model.modelDataChanged.connect(self.update_ui_from_model)
-                print("모델 modelDataChanged 시그널 -> UI 업데이트 연결")
+                print("ResultPage: MVC 시그널 연결 완료")
+
+    """
+    시그널 연결 - MVC/Legacy 모드 구분
+    """
+    def connect_signals(self):
+        if self._mvc_mode:
+            print("ResultPage: MVC 모드 - Controller를 통한 연결만 사용")
+            # MVC 모드에서는 Controller가 모든 업데이트를 담당
+            # 여기서는 추가 연결 없음
+            return
+
+        # MVC 컨트롤러가 없는 경우: 레거시 직접 처리 방식 사용
+        print("ResultPage: Legacy 모드 - 직접 연결 사용")
+        if hasattr(self, 'left_section'):
+            if hasattr(self.left_section, 'viewDataChanged'):
+                self.left_section.viewDataChanged.connect(self.on_data_changed)
+                print("ResultPage: Legacy viewDataChanged 연결")
+        
+            # 컨트롤러가 없을 때만 레거시 이벤트 핸들러 연결
+            if hasattr(self.left_section, 'itemModified'):
+                self.left_section.itemModified.connect(self.on_item_data_changed_legacy)
+                print("ResultPage: Legacy itemModified 연결")
+
+    def initialize_with_data(self, df, analysis_results):
+        """🎯 초기화 - 분석 결과와 함께 (MVC 전용)"""
+        print("ResultPage: 분석 결과와 함께 초기화")
+        
+        self.result_data = df
+        
+        # 위젯 참조 설정
+        if self.plan_maintenance_widget is None:
+            self._setup_widget_references()
+
+        # # 🔧 핵심: 사전할당 정보를 LeftSection에 먼저 전달
+        # if hasattr(self, 'pre_assigned_items') and hasattr(self, 'left_section'):
+        #     print(f"ResultPage: 사전할당 정보를 LeftSection에 전달 - {len(self.pre_assigned_items)}개")
+        #     self.left_section.set_pre_assigned_items(self.pre_assigned_items)
+        
+        # 분석 결과로 위젯 업데이트 (재분석 없음)
+        self._update_widgets_with_analysis_results(analysis_results)
+
+    def update_ui_only(self, df, analysis_results):
+        """🎯 UI만 업데이트 - 분석 없음 (MVC 전용)"""
+        print("ResultPage: UI만 업데이트 (분석 없음)")
+        
+        self.result_data = df
+
+        # # 🔧 핵심: 사전할당 정보를 LeftSection에 먼저 전달 (조정 시에도)
+        # if hasattr(self, 'pre_assigned_items') and hasattr(self, 'left_section'):
+        #     self.left_section.set_pre_assigned_items(self.pre_assigned_items)
+        
+        # 분석 결과로 위젯 업데이트 (재분석 없음)
+        self._update_widgets_with_analysis_results(analysis_results)
+        
+        # 상태 업데이트
+        self._update_item_status()
+
+
+
+    def _update_widgets_with_analysis_results(self, analysis_results):
+        """🎯 분석 결과로 위젯 업데이트 - 재분석 없음"""
+        print("ResultPage: 분석 결과로 위젯 업데이트")
+        
+        if not analysis_results:
+            return
+        
+        try:
+            # 1. KPI 위젯 업데이트
+            if 'kpi' in analysis_results:
+                kpi_data = analysis_results['kpi']
+                if 'base_scores' in kpi_data:
+                    self.kpi_widget.update_scores(
+                        base_scores=kpi_data['base_scores'],
+                        adjust_scores=kpi_data.get('adjust_scores', {})
+                    )
+            
+            # 2. 자재 위젯 업데이트
+            if 'material' in analysis_results:
+                material_data = analysis_results['material']
+                if 'analyzer' in material_data and material_data['analyzer']:
+                    self.material_analyzer = material_data['analyzer']
+                    # 자재 부족 상태를 Left Section에 전달
+                    if hasattr(self, 'left_section'):
+                        self.left_section.set_current_shortage_items(
+                            material_data.get('shortage_results', {})
+                        )
+            
+            # 3. 계획 유지율 위젯 업데이트
+            if 'plan_maintenance' in analysis_results and self.plan_maintenance_widget:
+                pm_data = analysis_results['plan_maintenance']
+                if 'data' in pm_data:
+                    self.plan_maintenance_widget.set_data(
+                        pm_data['data'],
+                        pm_data.get('start_date'),
+                        pm_data.get('end_date')
+                    )
+            
+            # 4. 시각화 데이터 설정
+            if 'capa_ratio' in analysis_results:
+                self.capa_ratio_data = analysis_results['capa_ratio']
+            
+            if 'utilization' in analysis_results:
+                self.utilization_data = analysis_results['utilization']
+            
+            # 5. 시각화 업데이트
+            self.update_all_visualizations()
+            
+        except Exception as e:
+            print(f"ResultPage: 위젯 업데이트 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
+
+    """
+    MVC 모드 전용 - 모델로부터 UI 업데이트
+    """
+    def update_ui_from_model(self, model_df=None):
+        if not self._mvc_mode:
+            print("ResultPage: Legacy 모드 - update_ui_from_model 실행")
+            # Legacy 처리...
+            if model_df is None and self.controller:
+                model_df = self.controller.model.get_dataframe()
+            
+            if model_df is not None and not model_df.empty:
+                self._update_all_components(model_df)
+        else:
+            print("ResultPage: MVC 모드 - update_ui_from_model 스킵 (Controller가 처리)")
+
+    """
+    Legacy 모드 또는 초기화용 - 데이터 변경 처리
+    """
+    def on_data_changed(self, data):
+        if self._mvc_mode:
+            print("ResultPage: MVC 모드에서 on_data_changed 직접 호출 차단")
+            return
+        
+        print("ResultPage: Legacy 모드 - on_data_changed 실행")
+        self._update_all_components(data)
+
+    """
+    실제 업데이트 로직 - MVC/Legacy 공통 사용
+    """
+    def _update_all_components(self, data): 
+        print("ResultPage: 컴포넌트 업데이트 시작")
+        self.result_data = data
+
+        # 위젯 참조가 없으면 다시 설정
+        if self.plan_maintenance_widget is None:
+            self._setup_widget_references()
+
+        # 자재 부족 분석
+        if data is not None and not data.empty:
+            print("데이터 로드 후 자재 부족 분석 시행")
+            if hasattr(self, 'material_widget') and self.material_widget:
+                self.material_widget.run_analysis(data)
+                self.material_analyzer = self.material_widget.get_material_analyzer()
+            else:
+                try:
+                    if not hasattr(self, 'material_analyzer') or self.material_analyzer is None:
+                        self.material_analyzer = MaterialShortageAnalyzer()
+                    self.material_analyzer.analyze_material_shortage(data)
+                except Exception as e:
+                    print(f"초기 자재 부족 분석 중 오류 :{e}")
+
+        # 상태 업데이트
+        if self.pre_assigned_items:
+            self.update_left_widget_pre_assigned_status(self.pre_assigned_items)
+        if self.material_analyzer and self.material_analyzer.shortage_results:
+            self.update_left_widget_shortage_status(self.material_analyzer.shortage_results)
+        if hasattr(self.left_section, 'shipment_failure_items') and self.left_section.shipment_failure_items:
+            self.left_section.apply_shipment_failure_status()
+
+        try:
+            if data is not None and not data.empty:
+                # kpi 업데이트
+                self.update_kpi_scores() 
+                self._refresh_base_kpi()  # 조정여부 확인
+
+                # 각종 위젯 업데이트
+                self._update_plan_maintenance(data)
+                self._update_split_allocation(data)
+                self._update_summary(data)
+
+                # 시각화 데이터 준비 및 업데이트
+                self._prepare_visualization_data(data)
+                self.update_all_visualizations()
+            else:
+                print("빈 데이터프레임")
+                self.capa_ratio_data = {}
+                self.utilization_data = {}
+
+        except Exception as e:
+            print(f"데이터 분석 중 오류 발생: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    """
+    계획 유지율 업데이트
+    """
+    def _update_plan_maintenance(self, data):
+        if self.plan_maintenance_widget:
+            start_date, end_date = self.main_window.data_input_page.date_selector.get_date_range()
+            self.plan_maintenance_widget.set_data(data, start_date, end_date)
+
+    """
+    할당 분석 업데이트
+    """
+    def _update_split_allocation(self, data):
+        if self.split_allocation_widget:
+            self.split_allocation_widget.run_analysis(data)
+
+    """
+    요약 정보 업데이트
+    """
+    def _update_summary(self, data):
+        if self.summary_widget:
+            self.summary_widget.run_analysis(data)
+
+    """
+    시각화 데이터 준비
+    """
+    def _prepare_visualization_data(self, data):
+        has_user_adjustments = False
+
+        # MVC 모드에서 조정 여부 확인
+        if self._mvc_mode and self.controller and hasattr(self.controller, 'model'):
+            original_df = self.controller.model._original_df  # 원본 데이터
+            current_df = self.controller.model._df  # 현재(조정된) 데이터
+            
+            if original_df is not None and current_df is not None:
+                # 주요 컬럼 비교로 조정 여부 확인
+                key_columns = ['Line', 'Time', 'Item', 'Qty']
+                for col in key_columns:
+                    if col in original_df.columns and col in current_df.columns:
+                        if not original_df[col].equals(current_df[col]):
+                            has_user_adjustments = True
+                            print(f"시각화 업데이트: 조정 감지 - '{col}' 컬럼 변경됨")
+                            break
+        
+        # 조정 여부에 따라 시각화 데이터 설정
+        if has_user_adjustments and self._mvc_mode:
+            if self.controller and self.controller.model:
+                comparison_df = self.controller.model.get_comparison_dataframe()
+                
+                if comparison_df and 'original' in comparison_df and 'adjusted' in comparison_df:
+                    self.capa_ratio_data = {
+                        'original': CapaRatioAnalyzer.analyze_capa_ratio(comparison_df['original']),
+                        'adjusted': CapaRatioAnalyzer.analyze_capa_ratio(comparison_df['adjusted'])
+                    }
+                    self.utilization_data = {
+                        'original': CapaUtilization.analyze_utilization(comparison_df['original']),
+                        'adjusted': CapaUtilization.analyze_utilization(comparison_df['adjusted'])
+                    }
+        else:
+            self.capa_ratio_data = CapaRatioAnalyzer.analyze_capa_ratio(data_df=data, is_initial=True)
+            self.utilization_data = CapaUtilization.analyze_utilization(data)
+
+        # 시각화 갱신
+        # self.update_all_visualizations()
+
+    """
+    Legacy 모드 전용 - 아이템 변경 처리
+    """
+    def on_item_data_changed_legacy(self, item, new_data):
+        if self._mvc_mode:
+            print("ResultPage: MVC 모드에서 Legacy 처리 차단")
+            return
+        
+        print("ResultPage: Legacy 모드 - 아이템 변경 처리")
+        # 위치 변경에 의한 호출인지 확인
+        if hasattr(item, '_is_position_change'):
+            return
+        
+        # 수량 변경이 있는 경우 계획 유지율 위젯 업데이트
+        if 'Qty' in new_data and pd.notna(new_data['Qty']):
+            line = new_data.get('Line')
+            time = new_data.get('Time')
+            item_code = new_data.get('Item')
+            new_qty = new_data.get('Qty')
+
+            # 값 변환 및 검증
+            try:
+                time = int(time) if time is not None else None
+                new_qty = int(float(new_qty)) if new_qty is not None else None
+            except (ValueError, TypeError):
+                print(f"시간 또는 수량 변환 오류: time={time}, qty={new_qty}")
+                return
+
+            if all([line, time is not None, item_code, new_qty is not None]):
+                # 계획 유지율 위젯 업데이트
+                if hasattr(self, 'plan_maintenance_widget'):
+                    print(f"계획 유지율 위젯 수량 업데이트: {line}, {time}, {item_code}, {new_qty}")
+                    self.plan_maintenance_widget.update_quantity(line, time, item_code, new_qty)
+
+    """
+    최적화 결과 설정 - MVC 구조 초기화
+    """
+    def set_optimization_result(self, results):
+        # 변수 초기화 - 중복 호출 방지 위한 추적
+        self.data_changed_count = 0
+        print("1. data_changed_count 초기화 완료")
+        
+        # 결과 데이터 추출
+        assignment_result = results.get('assignment_result')
+        pre_assigned_items = results.get('pre_assigned_items', [])
+        optimization_metadata = results.get('optimization_metadata', {})
+
+        print("=== 최적화 결과 분석 ===")
+        print(f"1. assignment_result 타입: {type(assignment_result)}")
+        print(f"2. assignment_result 크기: {len(assignment_result) if hasattr(assignment_result, '__len__') else 'N/A'}")
+        print(f"3. pre_assigned_items 타입: {type(pre_assigned_items)}")
+        print(f"4. pre_assigned_items 크기: {len(pre_assigned_items)}")
+
+        # assignment_result가 DataFrame인 경우
+        if hasattr(assignment_result, 'columns'):
+            print(f"5. assignment_result 컬럼: {assignment_result.columns.tolist()}")
+            
+            # Type 컬럼이 있다면 사전할당 여부 확인
+            if 'Type' in assignment_result.columns:
+                type_counts = assignment_result['Type'].value_counts()
+                print(f"6. Type별 개수: {type_counts}")
+                
+            # Item 컬럼에서 고유 아이템 수 확인
+            if 'Item' in assignment_result.columns:
+                unique_items = assignment_result['Item'].nunique()
+                total_rows = len(assignment_result)
+                print(f"7. 고유 아이템 수: {unique_items}")
+                print(f"8. 총 행 수: {total_rows}")
+                
+                # 사전할당 아이템과 결과의 교집합 확인
+                result_items = set(assignment_result['Item'].unique())
+                pre_assigned_set = set(pre_assigned_items)
+                
+                intersection = result_items & pre_assigned_set
+                only_in_result = result_items - pre_assigned_set
+                only_in_pre_assigned = pre_assigned_set - result_items
+                
+                print(f"9. 결과에 있는 사전할당 아이템: {len(intersection)}개")
+                print(f"10. 결과에만 있는 아이템: {len(only_in_result)}개")
+                print(f"11. 사전할당에만 있는 아이템: {len(only_in_pre_assigned)}개")
+                
+                if only_in_pre_assigned:
+                    print(f"    사전할당에만 있는 아이템 샘플: {list(only_in_pre_assigned)[:5]}")
+                    
+        print("========================")
+            
+        # 사전할당 아이템 저장 
+        self.pre_assigned_items = set(pre_assigned_items)
+        print(f"[DEBUG] 최적화 결과에서 사전할당 아이템 {len(self.pre_assigned_items)}개 설정")
+        
+        print("2. set_optimization_result : 컨트롤러 초기화 시작")
+        # ─── MVC 구조 초기화 ───
+        # 1) 기존 PlanAdjustmentValidator를 재사용해 validator 생성
+        validator = PlanAdjustmentValidator(assignment_result,self)
+        
+        # 2) AssignmentModel 생성
+        model = AssignmentModel(pd.DataFrame(assignment_result), list(self.pre_assigned_items), validator)
+        
+        # 3) AdjustmentController 생성 (error_manager 주입)
+        controller = AdjustmentController(model, self.left_section, self.error_manager)
+        
+        print("3. 컨트롤러 생성 완료")
+        
+        # 4) ResultPage 참조 설정
+        controller.set_result_page(self)
+        print("4. 컨트롤러에 ResultPage 참조 전달")
+        
+        # 5) MVC 모드 설정
+        self.set_controller(controller)
+        
+        # 6) Left Section에 validator와 controller 저장 (fallback용)
+        self.left_section.set_validator(validator)
+        self.left_section.set_controller(controller)
+        
+        print("5. 컨트롤러 세팅 완료")
+        
+        # 7) 초기 데이터 로드 (시그널 연결 전에)
+        controller.initialize_views()
+        print("6. 초기 데이터 설정 완료")
+        
+        # 8) 시그널 연결 (초기화 후 마지막에 수행)
+        print("7. 시그널 연결 시작")
+        controller.connect_signals()
+        print("8. 시그널 연결 완료")
+
+        # 사전할당 정보를 left_section에 전달
+        self.left_section.pre_assigned_items = self.pre_assigned_items.copy()
+        print(f"[DEBUG] left_section에 사전할당 정보 전달: {len(self.left_section.pre_assigned_items)}개")
+        
+        # 메타데이터 필요시 - 추후 삭제
+        self.optimization_metadata = optimization_metadata
+        
+        print(f"MVC 초기화 완료: Controller={controller}")
+        return True
+    
+    """
+    결과 파일 로드 및 MVC 구조 초기화
+    
+    Args:
+        file_path: 선택적으로 파일 경로를 직접 전달 가능
+    Returns:
+        bool: 로드 성공 여부
+    """
+    def load_result_file(self, file_path=None):
+        # 파일 선택 (경로가 전달되지 않은 경우)
+        if file_path is None:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "결과 파일 선택", "", "Excel Files (*.xlsx *.xls *.csv)"
+            )
+        
+        if not file_path or not os.path.exists(file_path):
+            print(f"유효한 파일 경로가 아닙니다: {file_path}")
+            return False
+        
+        try:
+            print(f"[INFO] 결과 파일 로드 시작: {file_path}")
+            
+            # 기존 데이터 정리
+            if hasattr(self, 'left_section'):
+                self.left_section.clear_all_items()
+            
+            # 파일 로드
+            from app.utils.fileHandler import load_file
+            result_data = load_file(file_path)
+            
+            # 여러 시트가 반환되면 첫 번째 시트 사용
+            if isinstance(result_data, dict):
+                if 'result' in result_data:
+                    result_data = result_data['result']
+                else:
+                    # 첫 번째 시트 사용
+                    first_sheet_name = list(result_data.keys())[0]
+                    result_data = result_data[first_sheet_name]
+                    print(f"[INFO] '{first_sheet_name}' 시트 데이터 사용")
+            
+            # DataFrame이 아니면 변환
+            if not isinstance(result_data, pd.DataFrame):
+                print("[ERROR] 데이터를 DataFrame으로 변환할 수 없습니다.")
+                EnhancedMessageBox.show_validation_error(
+                    self, 
+                    "파일 형식 오류", 
+                    "파일에서 유효한 데이터를 찾을 수 없습니다."
+                )
+                return False
+            
+            # 데이터 검증 - 필수 컬럼 확인
+            required_columns = ['Line', 'Time', 'Item']
+            missing_columns = [col for col in required_columns if col not in result_data.columns]
+            
+            if missing_columns:
+                EnhancedMessageBox.show_validation_error(
+                    self,
+                    "파일 형식 오류",
+                    f"필수 열이 없습니다: {', '.join(missing_columns)}\n올바른 형식의 파일을 선택해주세요."
+                )
+                return False
+            
+            # 데이터 타입 정규화
+            try:
+                if 'Line' in result_data.columns:
+                    result_data['Line'] = result_data['Line'].astype(str)
+                
+                if 'Time' in result_data.columns:
+                    result_data['Time'] = pd.to_numeric(result_data['Time'], errors='coerce').fillna(0).astype(int)
+                
+                if 'Item' in result_data.columns:
+                    result_data['Item'] = result_data['Item'].astype(str)
+                
+                if 'Qty' in result_data.columns:
+                    result_data['Qty'] = pd.to_numeric(result_data['Qty'], errors='coerce').fillna(0).astype(int)
+            except Exception as e:
+                print(f"[WARNING] 데이터 타입 변환 중 오류: {e}")
+            
+            # 파일 경로 저장
+            FilePaths.set("result_file", file_path)
+            
+            # MVC 구조 초기화
+            print("[INFO] MVC 구조 초기화 시작")
+            
+            # 1. 검증기(Validator) 생성
+            validator = PlanAdjustmentValidator(result_data,self)
+            print("[INFO] 검증기 생성 완료")
+            
+            # 2. 사전할당 아이템 식별
+            pre_assigned_items = set()
+            if 'Type' in result_data.columns:
+                pre_assigned_mask = result_data['Type'] == 'Pre-assigned'
+                if pre_assigned_mask.any():
+                    pre_assigned_items = set(result_data.loc[pre_assigned_mask, 'Item'].unique())
+                    print(f"[INFO] {len(pre_assigned_items)}개 사전할당 아이템 발견")
+                    print(f"[DEBUG] 사전할당 아이템들: {list(pre_assigned_items)[:10]}...")
+            
+            # 3. 모델(Model) 생성
+            model = AssignmentModel(result_data, list(pre_assigned_items), validator)
+            print("[INFO] 모델 생성 완료")
+            
+            # 4. 컨트롤러(Controller) 생성
+            controller = AdjustmentController(model, self.left_section, self.error_manager)
+            print("[INFO] 컨트롤러 생성 완료")
+            
+            # 5. 컨트롤러에 ResultPage 참조 설정
+            controller.set_result_page(self)
+            
+            # 6. MVC 모드 설정
+            self.set_controller(controller)
+            
+            # 7. Left Section에 validator와 controller 설정
+            self.left_section.set_validator(validator)
+            self.left_section.set_controller(controller)
+            print("[INFO] 검증기 및 컨트롤러 설정 완료")
+            
+            # 8. 초기 데이터 설정
+            controller.initialize_views()
+            print("[INFO] 초기 데이터 설정 완료")
+            
+            # 9. 시그널 연결
+            controller.connect_signals()
+            print("[INFO] 시그널 연결 완료")
+            
+            # 10. 사전할당 상태 설정
+            self.pre_assigned_items = pre_assigned_items
+            if pre_assigned_items:
+                self.update_left_widget_pre_assigned_status(pre_assigned_items)
+                print(f"[INFO] {len(pre_assigned_items)}개 사전할당 아이템 상태 설정")
+            
+            # 11. 자재 부족 분석 실행
+            try:
+                if hasattr(self, 'material_widget') and self.material_widget:
+                    self.material_widget.run_analysis(result_data)
+                    self.material_analyzer = self.material_widget.get_material_analyzer()
+                    print("[INFO] 자재 부족 분석 완료")
+            except Exception as e:
+                print(f"[WARNING] 자재 부족 분석 중 오류: {e}")
+            
+            # 성공 메시지 표시
+            EnhancedMessageBox.show_validation_success(
+                self,
+                "File Loaded Successfully",
+                 f"File has been successfully loaded.\nRows: {result_data.shape[0]}, Columns: {result_data.shape[1]}"
+            )
+            
+            # 데이터 변경 이벤트 발생
+            if hasattr(self, 'on_data_changed'):
+                self.on_data_changed(result_data)
+            
+            print("[INFO] 파일 로드 및 MVC 초기화 완료")
+            return True
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            
+            EnhancedMessageBox.show_validation_error(
+                self,
+                "File Loding Error", 
+                f"An error occurred while loading the file.\n{str(e)}"
+            )
+            return False
+        
+
+
 
     """
     Material 탭 콘텐츠 생성
@@ -368,27 +930,6 @@ class ResultPage(QWidget):
         if capa_tab:
             self.viz_canvases = capa_tab.get_canvases()
     
-    """
-    이벤트 시그널 연결
-    """
-    def connect_signals(self):
-        if hasattr(self, 'controller') and self.controller:
-            # MVC 컨트롤러가 있는 경우: 컨트롤러만 사용
-            print("MVC 모드: 컨트롤러를 통한 처리만 활성화")
-            
-            # 모델 변경 -> UI 업데이트 연결 설정 (필요한 기능)
-            if hasattr(self.controller.model, 'modelDataChanged'):
-                self.controller.model.modelDataChanged.connect(self.update_ui_from_model)
-                print("모델 modelDataChanged 시그널 -> UI 업데이트 연결")
-        else:
-            # MVC 컨트롤러가 없는 경우: 레거시 직접 처리 방식 사용
-            print("레거시 모드: 직접 처리 방식 활성화")
-            if hasattr(self, 'left_section') and hasattr(self.left_section, 'viewDataChanged'):
-                self.left_section.viewDataChanged.connect(self.on_data_changed)
-            
-            # 컨트롤러가 없을 때만 레거시 이벤트 핸들러 연결
-            if hasattr(self, 'left_section') and hasattr(self.left_section, 'itemModified'):
-                self.left_section.itemModified.connect(self.on_item_data_changed_legacy)
                         
     """
     시각화 페이지 전환 및 버튼 스타일 업데이트
@@ -507,107 +1048,6 @@ class ResultPage(QWidget):
             self.left_section.set_shipment_failure_items(failure_items)
 
     """
-    데이터가 변경되었을 때 호출되는 메서드
-    데이터프레임을 분석하여 시각화 업데이트
-    """
-    def on_data_changed(self, data):
-        print("on_data_changed 호출됨 - 데이터 변경 감지")
-        self.result_data = data
-
-        # 위젯 참조가 없으면 다시 설정
-        if self.plan_maintenance_widget is None:
-            self._setup_widget_references()
-
-        # 자재 부족 분석
-        if data is not None and not data.empty:
-            print("데이터 로드 후 자재 부족 분석 시행")
-            if hasattr(self, 'material_widget') and self.material_widget:
-                self.material_widget.run_analysis(data)
-                self.material_analyzer = self.material_widget.get_material_analyzer()
-            else:
-                try:
-                    if not hasattr(self, 'material_analyzer') or self.material_analyzer is None:
-                        self.material_analyzer = MaterialShortageAnalyzer()
-                    self.material_analyzer.analyze_material_shortage(data)
-                except Exception as e:
-                    print(f"초기 자재 부족 분석 중 오류 :{e}")
-
-        # 상태 업데이트
-        if self.pre_assigned_items:
-            self.update_left_widget_pre_assigned_status(self.pre_assigned_items)
-        if self.material_analyzer and self.material_analyzer.shortage_results:
-            self.update_left_widget_shortage_status(self.material_analyzer.shortage_results)
-        if hasattr(self.left_section, 'shipment_failure_items') and self.left_section.shipment_failure_items:
-            self.left_section.apply_shipment_failure_status()
-
-        try:
-            if data is not None and not data.empty:
-                # kpi 업데이트
-                self.update_kpi_scores() 
-                self._refresh_base_kpi()  # 조정여부 확인
-
-                # 계획 유지율 업데이트
-                if self.plan_maintenance_widget:
-                    start_date, end_date = self.main_window.data_input_page.date_selector.get_date_range()
-                    self.plan_maintenance_widget.set_data(data, start_date, end_date)
-
-                # 할당 업데이트
-                if self.split_allocation_widget:
-                    self.split_allocation_widget.run_analysis(data)
-
-                # 요약 업데이트
-                if self.summary_widget:
-                    self.summary_widget.run_analysis(data)
-
-                # === 핵심: 비교차트 조건 분기 ===
-                has_user_adjustments = False
-                if self.controller and hasattr(self.controller, 'model'):
-                    original_df = self.controller.model._original_df  # 원본 데이터
-                    current_df = self.controller.model._df  # 현재(조정된) 데이터
-                    
-                    if original_df is not None and current_df is not None:
-                        # 주요 컬럼 비교로 조정 여부 확인
-                        key_columns = ['Line', 'Time', 'Item', 'Qty']
-                        for col in key_columns:
-                            if col in original_df.columns and col in current_df.columns:
-                                if not original_df[col].equals(current_df[col]):
-                                    has_user_adjustments = True
-                                    print(f"시각화 업데이트: 조정 감지 - '{col}' 컬럼 변경됨")
-                                    break
-                
-                # 조정 여부에 따라 시각화 데이터 설정
-                if has_user_adjustments:
-                    if self.controller and self.controller.model:
-                        comparison_df = self.controller.model.get_comparison_dataframe()
-                        
-                        if comparison_df and 'original' in comparison_df and 'adjusted' in comparison_df:
-                            self.capa_ratio_data = {
-                                'original': CapaRatioAnalyzer.analyze_capa_ratio(comparison_df['original']),
-                                'adjusted': CapaRatioAnalyzer.analyze_capa_ratio(comparison_df['adjusted'])
-                            }
-                            self.utilization_data = {
-                                'original': CapaUtilization.analyze_utilization(comparison_df['original']),
-                                'adjusted': CapaUtilization.analyze_utilization(comparison_df['adjusted'])
-                            }
-                else:
-                    self.capa_ratio_data = CapaRatioAnalyzer.analyze_capa_ratio(data_df=data, is_initial=True)
-                    self.utilization_data = CapaUtilization.analyze_utilization(data)
-
-                # 시각화 갱신
-                self.update_all_visualizations()
-
-            else:
-                print("빈 데이터프레임")
-                self.capa_ratio_data = {}
-                self.utilization_data = {}
-
-        except Exception as e:
-            print(f"데이터 분석 중 오류 발생: {e}")
-            import traceback
-            traceback.print_exc()
-    
-
-    """
     모든 시각화 차트 업데이트
     """
     def update_all_visualizations(self):
@@ -640,7 +1080,6 @@ class ResultPage(QWidget):
     """
     최종 최적화 결과를 파일로 내보내는 메서드
     """
-
     def export_results(self):
         try:
             # 저장 경로 설정
@@ -700,6 +1139,31 @@ class ResultPage(QWidget):
             print(f"Export 과정에서 오류 발생: {str(e)}")
             QMessageBox.critical(self, "Export Error", f"An error occurred during export:\n{str(e)}")
 
+    def _update_item_status(self):
+        """🔧 아이템 상태 업데이트 - 사전할당, 자재부족, 출하실패"""
+        print("ResultPage: 아이템 상태 업데이트")
+        
+        try:
+            # 사전할당 상태 적용
+            if self.pre_assigned_items and hasattr(self, 'left_section'):
+                self.update_left_widget_pre_assigned_status(self.pre_assigned_items)
+            
+            # 자재 부족 상태 적용
+            if (hasattr(self, 'material_analyzer') and 
+                self.material_analyzer and 
+                hasattr(self.material_analyzer, 'shortage_results') and
+                hasattr(self, 'left_section')):
+                self.update_left_widget_shortage_status(self.material_analyzer.shortage_results)
+            
+            # 출하 실패 상태 적용
+            if (hasattr(self, 'left_section') and 
+                hasattr(self.left_section, 'shipment_failure_items') and 
+                self.left_section.shipment_failure_items):
+                self.left_section.apply_shipment_failure_status()
+                
+        except Exception as e:
+            print(f"아이템 상태 업데이트 중 오류: {e}")
+    
     """
     왼쪽 위젯의 아이템들에 자재 부족 상태 적용
     
@@ -740,69 +1204,6 @@ class ResultPage(QWidget):
                         else:
                             # 부족 목록에 없는 경우 부족 상태 해제
                             item.set_shortage_status(False)
-
-
-    """
-    1. 최적화 결과를 사전할당 정보와 함께 설정
-    -> left_section으로 전달
-    """
-    def set_optimization_result(self, results):
-        # 변수 초기화 - 중복 호출 방지 위한 추적
-        self.data_changed_count = 0
-        print("1. data_changed_count 초기화 완료")
-        
-        # 결과 데이터 추출
-        assignment_result = results.get('assignment_result')
-        pre_assigned_items = results.get('pre_assigned_items', [])
-        optimization_metadata = results.get('optimization_metadata', {})
-        
-        # 사전할당 아이템 저장 
-        self.pre_assigned_items = set(pre_assigned_items)
-        
-        print("2. set_optimization_result : 컨트롤러 초기화 시작")
-        
-        # ─── MVC 구조 초기화 ───
-        # 1) 기존 PlanAdjustmentValidator를 재사용해 validator 생성
-        validator = PlanAdjustmentValidator(assignment_result,self)
-        
-        # 2) AssignmentModel 생성
-        model = AssignmentModel(pd.DataFrame(assignment_result), list(self.pre_assigned_items), validator)
-        
-        # 3) AdjustmentController 생성 (error_manager 주입)
-        controller = AdjustmentController(model, self.left_section, self.error_manager)
-        
-        print("3. 컨트롤러 생성 완료")
-        
-        # 4) ResultPage 참조 설정
-        controller.set_result_page(self)
-        print("4. 컨트롤러에 ResultPage 참조 전달")
-        
-        # 5) 컨트롤러를 클래스에 저장하고 ResultPage에 설정
-        self.controller = controller
-        self.set_controller(controller)
-        
-        # 6) Left Section에 validator와 controller 저장 (fallback용)
-        self.left_section.set_validator(validator)
-        self.left_section.set_controller(controller)
-        
-        print("5. 컨트롤러 세팅 완료")
-        
-        # 7) 초기 데이터 로드 (시그널 연결 전에)
-        controller.initialize_views()
-        print("6. 초기 데이터 설정 완료")
-        
-        # 8) 시그널 연결 (초기화 후 마지막에 수행)
-        print("7. 시그널 연결 시작")
-        controller.connect_signals()
-        print("8. 시그널 연결 완료")
-        
-        # 메타데이터 필요시 - 추후 삭제
-        self.optimization_metadata = optimization_metadata
-        
-        print(f"MVC 초기화 완료: Controller={controller}, Model={model}, Validator={validator}")
-        print(f"최적화 결과 설정 완료: {len(pre_assigned_items)}개 사전할당 아이템")
-        
-        return True
  
     """
     왼쪽 위젯에 사전할당 상태 적용
@@ -964,8 +1365,8 @@ class ResultPage(QWidget):
             self.update_kpi_scores()
         
         # 왼쪽 섹션에 데이터 설정
-        if hasattr(self.left_section, 'update_data'):
-            self.left_section.update_data(result_data)
+        if hasattr(self.left_section, 'data_manager'):
+            self.left_section.data_manager.set_data_from_external(result_data)
         
         # Material 위젯에 분석기 설정 및 분석 실행
         if hasattr(self, 'material_widget') and self.material_widget:
@@ -1124,224 +1525,7 @@ class ResultPage(QWidget):
         # 조정이 없으면 Adjust 점수 초기화
         if not has_user_adjustments:
             self.kpi_widget.update_scores(adjust_scores={})
-                
-    """
-    MVC 외의 아이템 변경 처리 (로깅, 통계 등)
-    """
-    def on_item_data_changed_legacy(self, item, new_data):
-        # 위치 변경에 의한 호출인지 확인
-        if hasattr(item, '_is_position_change'):
-            return
-        
-        # 수량 변경이 있는 경우 계획 유지율 위젯 업데이트
-        if 'Qty' in new_data and pd.notna(new_data['Qty']):
-            line = new_data.get('Line')
-            time = new_data.get('Time')
-            item_code = new_data.get('Item')
-            new_qty = new_data.get('Qty')
 
-            # 값 변환 및 검증
-            try:
-                time = int(time) if time is not None else None
-                new_qty = int(float(new_qty)) if new_qty is not None else None
-            except (ValueError, TypeError):
-                print(f"시간 또는 수량 변환 오류: time={time}, qty={new_qty}")
-                return
-
-            if all([line, time is not None, item_code, new_qty is not None]):
-                # 계획 유지율 위젯 업데이트
-                if hasattr(self, 'plan_maintenance_widget'):
-                    print(f"계획 유지율 위젯 수량 업데이트: {line}, {time}, {item_code}, {new_qty}")
-                    self.plan_maintenance_widget.update_quantity(line, time, item_code, new_qty)
-
-
-    """
-    MVC 모델로부터 UI 업데이트하는 메서드
-    모델 데이터 변경 시 실행되며, 중복 업데이트 방지 기능 포함
-    """
-    def update_ui_from_model(self, model_df=None):
-        print("ResultPage: update_ui_from_model 호출됨")
-        
-        # 모델 데이터가 전달되지 않았다면 컨트롤러에서 가져오기
-        if model_df is None:
-            if hasattr(self, 'controller') and self.controller:
-                model_df = self.controller.model.get_dataframe()
-            elif hasattr(self, 'left_section') and hasattr(self.left_section, 'data'):
-                model_df = self.left_section.data
-        
-        # 데이터 유효성 검사
-        if model_df is None or model_df.empty:
-            print("유효한 모델 데이터가 없어 업데이트 중단")
-            return
-        
-        # on_data_changed를 통해 모든 UI 업데이트 진행
-        # 특별한 처리가 필요하면 여기에 추가
-        self.on_data_changed(model_df)
-
-
-
-    """
-    결과 파일 로드 및 MVC 구조 초기화
-    
-    Args:
-        file_path: 선택적으로 파일 경로를 직접 전달 가능
-    Returns:
-        bool: 로드 성공 여부
-    """
-    def load_result_file(self, file_path=None):
-        # 파일 선택 (경로가 전달되지 않은 경우)
-        if file_path is None:
-            file_path, _ = QFileDialog.getOpenFileName(
-                self, "결과 파일 선택", "", "Excel Files (*.xlsx *.xls *.csv)"
-            )
-        
-        if not file_path or not os.path.exists(file_path):
-            print(f"유효한 파일 경로가 아닙니다: {file_path}")
-            return False
-        
-        try:
-            print(f"[INFO] 결과 파일 로드 시작: {file_path}")
-            
-            # 기존 데이터 정리
-            if hasattr(self, 'left_section'):
-                self.left_section.clear_all_items()
-            
-            # 파일 로드
-            from app.utils.fileHandler import load_file
-            result_data = load_file(file_path)
-            
-            # 여러 시트가 반환되면 첫 번째 시트 사용
-            if isinstance(result_data, dict):
-                if 'result' in result_data:
-                    result_data = result_data['result']
-                else:
-                    # 첫 번째 시트 사용
-                    first_sheet_name = list(result_data.keys())[0]
-                    result_data = result_data[first_sheet_name]
-                    print(f"[INFO] '{first_sheet_name}' 시트 데이터 사용")
-            
-            # DataFrame이 아니면 변환
-            if not isinstance(result_data, pd.DataFrame):
-                print("[ERROR] 데이터를 DataFrame으로 변환할 수 없습니다.")
-                EnhancedMessageBox.show_validation_error(
-                    self, 
-                    "파일 형식 오류", 
-                    "파일에서 유효한 데이터를 찾을 수 없습니다."
-                )
-                return False
-            
-            # 데이터 검증 - 필수 컬럼 확인
-            required_columns = ['Line', 'Time', 'Item']
-            missing_columns = [col for col in required_columns if col not in result_data.columns]
-            
-            if missing_columns:
-                EnhancedMessageBox.show_validation_error(
-                    self,
-                    "파일 형식 오류",
-                    f"필수 열이 없습니다: {', '.join(missing_columns)}\n올바른 형식의 파일을 선택해주세요."
-                )
-                return False
-            
-            # 데이터 타입 정규화
-            try:
-                if 'Line' in result_data.columns:
-                    result_data['Line'] = result_data['Line'].astype(str)
-                
-                if 'Time' in result_data.columns:
-                    result_data['Time'] = pd.to_numeric(result_data['Time'], errors='coerce').fillna(0).astype(int)
-                
-                if 'Item' in result_data.columns:
-                    result_data['Item'] = result_data['Item'].astype(str)
-                
-                if 'Qty' in result_data.columns:
-                    result_data['Qty'] = pd.to_numeric(result_data['Qty'], errors='coerce').fillna(0).astype(int)
-            except Exception as e:
-                print(f"[WARNING] 데이터 타입 변환 중 오류: {e}")
-            
-            # 파일 경로 저장
-            FilePaths.set("result_file", file_path)
-            
-            # MVC 구조 초기화
-            print("[INFO] MVC 구조 초기화 시작")
-            
-            # 1. 검증기(Validator) 생성
-            validator = PlanAdjustmentValidator(result_data,self)
-            print("[INFO] 검증기 생성 완료")
-            
-            # 2. 사전할당 아이템 식별
-            pre_assigned_items = set()
-            if 'Type' in result_data.columns:
-                pre_assigned_mask = result_data['Type'] == 'Pre-assigned'
-                if pre_assigned_mask.any():
-                    pre_assigned_items = set(result_data.loc[pre_assigned_mask, 'Item'].unique())
-                    print(f"[INFO] {len(pre_assigned_items)}개 사전할당 아이템 발견")
-            
-            # 3. 모델(Model) 생성
-            model = AssignmentModel(result_data, list(pre_assigned_items), validator)
-            print("[INFO] 모델 생성 완료")
-            
-            # 4. 컨트롤러(Controller) 생성
-            controller = AdjustmentController(model, self.left_section, self.error_manager)
-            print("[INFO] 컨트롤러 생성 완료")
-            
-            # 5. 컨트롤러에 ResultPage 참조 설정
-            controller.set_result_page(self)
-            
-            # 6. 클래스 변수에 컨트롤러 저장
-            self.controller = controller
-            
-            # 7. Left Section에 validator와 controller 설정
-            self.left_section.set_validator(validator)
-            self.left_section.set_controller(controller)
-            print("[INFO] 검증기 및 컨트롤러 설정 완료")
-            
-            # 8. 초기 데이터 설정
-            controller.initialize_views()
-            print("[INFO] 초기 데이터 설정 완료")
-            
-            # 9. 시그널 연결
-            controller.connect_signals()
-            print("[INFO] 시그널 연결 완료")
-            
-            # 10. 사전할당 상태 설정
-            self.pre_assigned_items = pre_assigned_items
-            if pre_assigned_items:
-                self.update_left_widget_pre_assigned_status(pre_assigned_items)
-                print(f"[INFO] {len(pre_assigned_items)}개 사전할당 아이템 상태 설정")
-            
-            # 11. 자재 부족 분석 실행
-            try:
-                if hasattr(self, 'material_widget') and self.material_widget:
-                    self.material_widget.run_analysis(result_data)
-                    self.material_analyzer = self.material_widget.get_material_analyzer()
-                    print("[INFO] 자재 부족 분석 완료")
-            except Exception as e:
-                print(f"[WARNING] 자재 부족 분석 중 오류: {e}")
-            
-            # 성공 메시지 표시
-            EnhancedMessageBox.show_validation_success(
-                self,
-                "File Loaded Successfully",
-                 f"File has been successfully loaded.\nRows: {result_data.shape[0]}, Columns: {result_data.shape[1]}"
-            )
-            
-            # 데이터 변경 이벤트 발생
-            if hasattr(self, 'on_data_changed'):
-                self.on_data_changed(result_data)
-            
-            print("[INFO] 파일 로드 및 MVC 초기화 완료")
-            return True
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            
-            EnhancedMessageBox.show_validation_error(
-                self,
-                "File Loding Error", 
-                f"An error occurred while loading the file.\n{str(e)}"
-            )
-            return False
         
     """
     현재 데이터로 분산 배치 분석 업데이트

@@ -381,36 +381,49 @@ class FilterWidget(QWidget):
         """)
             
     """필터 데이터 설정"""
-    def set_filter_data(self, lines=None, projects=None):
-        max_width = 250
+
+    def set_filter_data(self, lines=None, projects=None, data_df=None):
+        """
+        필터 데이터 설정 - 데이터프레임도 함께 받아서 생산량 기준 정렬에 활용
+        """
+        print(f"DEBUG: FilterWidget.set_filter_data 호출")
+        print(f"DEBUG: lines 파라미터: {lines[:5] if lines else None}... (총 {len(lines) if lines else 0}개)")
+        print(f"DEBUG: projects 파라미터: {projects[:5] if projects else None}... (총 {len(projects) if projects else 0}개)")
+
+        # 데이터프레임 저장 (정렬에 활용)
+        self.data_df = data_df
 
         if lines:
             # 모든 라인을 문자열로 변환하여 저장
-            self.filter_data['line'] = sorted([str(line) for line in lines])
+            self.filter_data['line'] = [str(line) for line in lines]
+            print(f"DEBUG: 라인 데이터 저장 완료: {len(self.filter_data['line'])}개")
             self.update_line_filters()
-            
+
         if projects:
             # 모든 프로젝트를 문자열로 변환하여 저장
             self.filter_data['project'] = sorted([str(project) for project in projects])
+            print(f"DEBUG: 프로젝트 데이터 저장 완료: {len(self.filter_data['project'])}개")
             self.update_project_filters()
-    
-    """라인 필터 체크박스 업데이트"""
+
+        print("DEBUG: FilterWidget.set_filter_data 완료")
+
     """라인 필터 체크박스 업데이트"""
 
     def update_line_filters(self):
+        print(f"DEBUG: update_line_filters 시작 - {len(self.filter_data['line'])}개 라인")
+
         # 기존 체크박스 정리
         self._clear_layout(self.line_checkbox_layout)
 
         # 라인을 제조동별로 정렬
         sorted_lines = self.sort_lines_by_building(self.filter_data['line'])
+        print(f"DEBUG: 정렬된 라인: {sorted_lines}")
 
         # 체크박스 생성
+        checkbox_count = 0
         for line in sorted_lines:
             checkbox = QCheckBox(str(line))
-
-            # *** 핵심 수정: 모든 라인을 기본 활성화로 설정 ***
             checkbox.setChecked(True)  # 기본값은 체크된 상태
-
             checkbox.setStyleSheet("""
                 QCheckBox {
                     background-color: white;
@@ -419,57 +432,26 @@ class FilterWidget(QWidget):
                 }
             """)
 
-            # *** 핵심 수정: 필터 상태도 True로 초기화 ***
             self.filter_states['line'][line] = True
-
             checkbox.stateChanged.connect(
                 lambda state, line=line: self.on_filter_changed('line', line, state == Qt.Checked))
             self.line_checkbox_layout.addWidget(checkbox)
+            checkbox_count += 1
 
-        # "Line (x)" 형식으로 버튼 텍스트 업데이트
+        print(f"DEBUG: {checkbox_count}개 라인 체크박스 생성 완료")
+
+        # 버튼 텍스트 업데이트
         self.line_filter_btn.setText(f"Line ({len(sorted_lines)})")
+        print(f"DEBUG: 라인 버튼 텍스트 업데이트: Line ({len(sorted_lines)})")
 
-    def sort_lines_by_building(self, lines):
-        """라인을 제조동별 생산량 기준으로 정렬"""
-        if not lines:
-            return []
-
-        try:
-            # 제조동별로 그룹화
-            building_groups = {}
-            for line in lines:
-                building = str(line)[0] if line else 'Z'  # 첫 글자가 제조동
-                if building not in building_groups:
-                    building_groups[building] = []
-                building_groups[building].append(line)
-
-            # 제조동을 알파벳 순으로 정렬 (I, K, D 등)
-            # 실제로는 생산량 기준이지만 간단하게 I -> K -> D 순으로
-            building_priority = {'I': 1, 'K': 2, 'D': 3}
-
-            sorted_buildings = sorted(building_groups.keys(),
-                                      key=lambda x: building_priority.get(x, 99))
-
-            # 정렬된 라인 목록 생성
-            sorted_lines = []
-            for building in sorted_buildings:
-                # 각 제조동 내에서 라인명 오름차순 정렬
-                building_lines = sorted(building_groups[building])
-                sorted_lines.extend(building_lines)
-
-            return sorted_lines
-
-        except Exception as e:
-            print(f"라인 정렬 중 오류: {e}")
-            # 오류 시 기본 정렬
-            return sorted(lines)
-
-    """프로젝트 필터 체크박스 업데이트"""
     def update_project_filters(self):
+        print(f"DEBUG: update_project_filters 시작 - {len(self.filter_data['project'])}개 프로젝트")
+
         # 기존 체크박스 정리
         self._clear_layout(self.project_checkbox_layout)
-        
+
         # 체크박스 생성
+        checkbox_count = 0
         for project in self.filter_data['project']:
             checkbox = QCheckBox(str(project))
             checkbox.setChecked(True)  # 기본값은 체크된 상태
@@ -484,9 +466,14 @@ class FilterWidget(QWidget):
             checkbox.stateChanged.connect(
                 lambda state, proj=project: self.on_filter_changed('project', proj, state == Qt.Checked))
             self.project_checkbox_layout.addWidget(checkbox)
-        
-        # "Project (x)" 형식으로 버튼 텍스트 업데이트
+            checkbox_count += 1
+
+        print(f"DEBUG: {checkbox_count}개 프로젝트 체크박스 생성 완료")
+
+        # 버튼 텍스트 업데이트
         self.project_filter_btn.setText(f"Project ({len(self.filter_data['project'])})")
+        print(f"DEBUG: 프로젝트 버튼 텍스트 업데이트: Project ({len(self.filter_data['project'])})")
+
     
     """레이아웃 내 위젯 모두 제거"""
     def _clear_layout(self, layout):
@@ -581,3 +568,132 @@ class FilterWidget(QWidget):
 
         # ★ 마지막에 한 번만 필터 변경 신호 발생
         self.filter_changed.emit(self.filter_states.copy())
+
+    def sort_lines_by_building(self, lines):
+        """
+        라인을 제조동별 생산량 기준으로 정렬하는 메서드
+
+        Args:
+            lines: 정렬할 라인 목록
+
+        Returns:
+            정렬된 라인 목록
+        """
+        try:
+            print(f"DEBUG: sort_lines_by_building 시작 - {len(lines)}개 라인")
+
+            # 데이터프레임이 있으면 생산량 기준 정렬, 없으면 알파벳 순 정렬
+            if hasattr(self, 'data_df') and self.data_df is not None and not self.data_df.empty:
+                print("DEBUG: 데이터프레임 기반 생산량 정렬 수행")
+                return self._sort_by_production_volume(lines)
+            else:
+                print("DEBUG: 데이터프레임 없음 - 알파벳 순 정렬 수행")
+                return self._sort_alphabetically(lines)
+
+        except Exception as e:
+            print(f"DEBUG: 라인 정렬 중 오류: {e}")
+            # 오류 발생 시 원본 목록 정렬하여 반환
+            return sorted(lines)
+
+    def _sort_by_production_volume(self, lines):
+        """생산량 기준 라인 정렬 - 제조동은 생산량순, 제조동 내부는 번호순"""
+        try:
+            import pandas as pd
+
+            # 제조동별 생산량 계산
+            temp_data = self.data_df.copy()
+            temp_data['Building'] = temp_data['Line'].str[0]
+            building_production = temp_data.groupby('Building')['Qty'].sum()
+
+            # 생산량 기준으로 제조동 정렬 (내림차순)
+            sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
+            print(f"DEBUG: 제조동별 생산량 정렬: {sorted_buildings}")
+
+            # 제조동별로 라인 그룹화 및 정렬
+            all_lines = [line for line in lines if line in temp_data['Line'].values]
+            sorted_lines = []
+
+            for building in sorted_buildings:
+                # 해당 제조동에 속하는 라인들 찾기
+                building_lines = [line for line in all_lines if line.startswith(building)]
+
+                # ★ 각 제조동 내에서는 라인 번호순으로 정렬 (I_01, I_02, I_03...)
+                if building_lines:
+                    sorted_building_lines = self._sort_lines_by_number(building_lines)
+                    sorted_lines.extend(sorted_building_lines)
+                    print(f"DEBUG: {building} 제조동 라인 번호순 정렬: {sorted_building_lines}")
+
+            # 누락된 라인이 있다면 마지막에 추가
+            remaining_lines = [line for line in lines if line not in sorted_lines]
+            if remaining_lines:
+                sorted_lines.extend(sorted(remaining_lines))
+                print(f"DEBUG: 누락 라인 추가: {remaining_lines}")
+
+            print(f"DEBUG: 생산량 기준 정렬 완료 - 총 {len(sorted_lines)}개 라인")
+            return sorted_lines
+
+        except Exception as e:
+            print(f"DEBUG: 생산량 기준 정렬 중 오류: {e}")
+            return self._sort_alphabetically(lines)
+
+    def _sort_alphabetically(self, lines):
+        """알파벳 순 라인 정렬 - 제조동은 알파벳순, 제조동 내부는 번호순"""
+        try:
+            # 제조동별로 라인 그룹화
+            building_groups = {}
+            for line in lines:
+                if '_' in line:
+                    building = line.split('_')[0]  # 예: I_01 -> I
+                else:
+                    building = line[0] if line else 'Z'  # 첫 글자 또는 기본값
+
+                if building not in building_groups:
+                    building_groups[building] = []
+                building_groups[building].append(line)
+
+            # 제조동별 정렬 (알파벳 순)
+            sorted_buildings = sorted(building_groups.keys())
+
+            # 각 제조동 내에서 라인 번호순 정렬
+            sorted_lines = []
+            for building in sorted_buildings:
+                building_lines = self._sort_lines_by_number(building_groups[building])
+                sorted_lines.extend(building_lines)
+
+            print(f"DEBUG: 알파벳 순 정렬 완료 - 제조동: {sorted_buildings}, 총 라인: {len(sorted_lines)}")
+            return sorted_lines
+
+        except Exception as e:
+            print(f"DEBUG: 알파벳 순 정렬 중 오류: {e}")
+            return sorted(lines)
+
+    def _sort_lines_by_number(self, lines):
+        """
+        라인을 번호순으로 정렬 (I_01, I_02, I_03, I_10 순서)
+
+        Args:
+            lines: 같은 제조동의 라인 목록
+
+        Returns:
+            번호순으로 정렬된 라인 목록
+        """
+        try:
+            def extract_line_number(line):
+                """라인에서 숫자 부분 추출"""
+                if '_' in line:
+                    number_part = line.split('_')[1]
+                    try:
+                        return int(number_part)
+                    except ValueError:
+                        return 999  # 숫자가 아닌 경우 마지막에 배치
+                return 999
+
+            # 번호 순으로 정렬
+            sorted_lines = sorted(lines, key=extract_line_number)
+            print(f"DEBUG: 라인 번호순 정렬: {lines} -> {sorted_lines}")
+            return sorted_lines
+
+        except Exception as e:
+            print(f"DEBUG: 라인 번호순 정렬 중 오류: {e}")
+            return sorted(lines)
+

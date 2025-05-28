@@ -842,13 +842,36 @@ class ModifiedLeftSection(QWidget):
 
     def update_filter_data(self):
         """
-        데이터 로드 후 필터 데이터 업데이트 (Project 컬럼 처리 개선)
+        데이터 로드 후 필터 데이터 업데이트 (디버깅 강화)
         """
-        if self.data is None:
+        print("DEBUG: update_filter_data 시작")
+
+        if self.data is None or self.data.empty:
+            print("DEBUG: 필터 업데이트 - 데이터가 없음")
             return
 
         try:
-            # 라인 정렬 (기존 로직과 동일)
+            print(f"DEBUG: 필터 업데이트 시작 - 데이터 행 수: {len(self.data)}")
+            print(f"DEBUG: 데이터 컬럼: {list(self.data.columns)}")
+
+            # 라인 데이터 확인
+            if 'Line' in self.data.columns:
+                unique_lines = self.data['Line'].unique()
+                print(f"DEBUG: 고유 라인 수: {len(unique_lines)}")
+                print(f"DEBUG: 라인 목록: {list(unique_lines)[:10]}...")  # 처음 10개만 출력
+            else:
+                print("DEBUG: Line 컬럼이 없습니다!")
+                return
+
+            # 프로젝트 데이터 확인
+            if 'Project' in self.data.columns:
+                unique_projects = self.data['Project'].unique()
+                print(f"DEBUG: 고유 프로젝트 수: {len(unique_projects)}")
+                print(f"DEBUG: 프로젝트 목록: {list(unique_projects)[:10]}...")
+            else:
+                print("DEBUG: Project 컬럼이 없습니다!")
+
+            # ★ 수정: 제조동은 생산량순, 제조동 내부는 번호순으로 정렬
             temp_data = self.data.copy()
             temp_data['Building'] = temp_data['Line'].str[0]
             building_production = temp_data.groupby('Building')['Qty'].sum()
@@ -858,37 +881,53 @@ class ModifiedLeftSection(QWidget):
             lines = []
             for building in sorted_buildings:
                 building_lines = [line for line in all_lines if line.startswith(building)]
-                sorted_building_lines = sorted(building_lines)
-                lines.extend(sorted_building_lines)
+                # ★ 각 제조동 내에서는 번호순으로 정렬
+                if building_lines:
+                    def extract_line_number(line):
+                        if '_' in line:
+                            try:
+                                return int(line.split('_')[1])
+                            except ValueError:
+                                return 999
+                        return 999
+
+                    sorted_building_lines = sorted(building_lines, key=extract_line_number)
+                    lines.extend(sorted_building_lines)
 
             remaining_lines = [line for line in all_lines if line not in lines]
             if remaining_lines:
                 lines.extend(sorted(remaining_lines))
 
-            # *** 프로젝트 목록 추출 개선 ***
+            print(f"DEBUG: 정렬된 라인 수: {len(lines)}")
+
+            # 프로젝트 목록 추출
             projects = []
             if 'Project' in self.data.columns:
-                print("DEBUG: Project 컬럼 발견")
                 unique_projects = self.data['Project'].unique()
-                print(f"DEBUG: 고유 프로젝트 값들: {unique_projects}")
-
                 for project in unique_projects:
                     if pd.isna(project):
-                        projects.append("N/A")  # NaN 값을 "N/A"로 처리
+                        projects.append("N/A")
                     else:
                         projects.append(str(project))
+                projects = sorted(set(projects))
+                print(f"DEBUG: 최종 프로젝트 목록 수: {len(projects)}")
 
-                projects = sorted(set(projects))  # 중복 제거하고 정렬
-                print(f"DEBUG: 최종 프로젝트 목록: {projects}")
+            # 필터 위젯에 데이터 설정 (★ 데이터프레임도 함께 전달 ★)
+            print("DEBUG: 필터 위젯에 데이터 설정 시작")
+            if hasattr(self, 'filter_widget') and self.filter_widget:
+                print("DEBUG: filter_widget 존재 확인됨")
+                # ★ 핵심: 데이터프레임도 함께 전달
+                self.filter_widget.set_filter_data(lines, projects, self.data)
+                print(f"DEBUG: 필터 데이터 설정 완료 - 라인: {len(lines)}개, 프로젝트: {len(projects)}개")
             else:
-                print("DEBUG: Project 컬럼이 데이터에 없습니다")
-
-            # 필터 위젯에 데이터 설정
-            self.filter_widget.set_filter_data(lines, projects)
-            print(f"DEBUG: 필터 데이터 설정 완료 - 라인: {len(lines)}개, 프로젝트: {len(projects)}개")
+                print("DEBUG: filter_widget이 없습니다!")
+                print(f"DEBUG: hasattr(self, 'filter_widget'): {hasattr(self, 'filter_widget')}")
+                if hasattr(self, 'filter_widget'):
+                    print(f"DEBUG: self.filter_widget type: {type(self.filter_widget)}")
+                    print(f"DEBUG: self.filter_widget is None: {self.filter_widget is None}")
 
         except Exception as e:
-            print(f"필터 데이터 업데이트 중 오류: {e}")
+            print(f"DEBUG: 필터 데이터 업데이트 중 오류: {e}")
             import traceback
             traceback.print_exc()
 
@@ -2010,6 +2049,10 @@ class ModifiedLeftSection(QWidget):
 
             # ===== 3. external 모드만의 고유 작업들 =====
 
+            # ★★★ 필터 데이터 업데이트 강제 실행 ★★★
+            print("[단순화] 필터 데이터 업데이트 강제 실행")
+            self.update_filter_data()
+
             # 데이터 변경 신호 발생
             df = self.extract_dataframe()
             self.viewDataChanged.emit(df)
@@ -2627,7 +2670,12 @@ class ModifiedLeftSection(QWidget):
             # ===== 6. 아이템 생성 및 배치 =====
             item_count = self._populate_grid_with_items()
 
-            # ===== 7. 상태 복원 =====
+            # ===== 7. 필터 데이터 업데이트 (★★★ 이 부분 추가 ★★★) =====
+            print(f"[UI업데이트] 필터 데이터 업데이트 시작")
+            self.update_filter_data()
+            print(f"[UI업데이트] 필터 데이터 업데이트 완료")
+
+            # ===== 8. 상태 복원 =====
             self._restore_ui_state(backup_data, preserve_search, preserve_filters)
 
             print(f"[UI업데이트] {source} UI 업데이트 완료 - 총 {item_count}개 아이템")
@@ -2871,3 +2919,19 @@ class ModifiedLeftSection(QWidget):
 
         except Exception as e:
             print(f"[UI업데이트] 상태 복원 중 오류: {e}")
+
+    def apply_legend_filters_only(self):
+        """
+        범례 필터만 적용 (상태선 업데이트)
+        rebuild_grid_with_filtered_data에서 호출됨
+        """
+        try:
+            if hasattr(self, 'current_filter_states'):
+                self.update_status_lines_only(self.current_filter_states)
+                print(f"[필터적용] 범례 필터만 적용 완료")
+            else:
+                print("[필터적용] current_filter_states가 없어 범례 필터 적용 스킵")
+        except Exception as e:
+            print(f"[필터적용] 범례 필터 적용 중 오류: {e}")
+            import traceback
+            traceback.print_exc()

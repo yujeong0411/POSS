@@ -37,6 +37,7 @@ class PlanAdjustmentValidator:
                         "capa_qty": pd.read_excel(master_path, sheet_name="capa_qty"),
                         "line_available": pd.read_excel(master_path, sheet_name="line_available"),
                         "capa_portion": pd.read_excel(master_path, sheet_name="capa_portion"),
+                        "due_LT" : pd.read_excel(master_path, sheet_name="due_LT")
                         # 필요한 시트가 더 있다면 여기에 추가
                     }
                     print(f"[로드] master 파일에서 데이터 로드: {master_path}")
@@ -111,15 +112,10 @@ class PlanAdjustmentValidator:
                         if col != 'Project' and row[col] == 1:
                             self.line_item_compatibility[project].append(col)
 
-        # demand 시트에서 납기일 추출
-        if 'demand' in self.demand_data:
-            df_demand = self.demand_data['demand']
-            for _, row in df_demand.iterrows():
-                if 'Item' in row and 'Due_date_LT' in row:
-                    item = row['Item']
-                    due_date = row['Due_date_LT']
-                    self.due_dates[item] = due_date
-
+        # 납기일 추출
+        if 'due_LT' in self.master_data:
+            df_due_lt = self.master_data['due_LT']
+            for _, row in df_due_lt.iterrows():
                 # 프로젝트별 납기일 추출
                 if 'Project' in row and 'Due_date_LT' in row:
                     project = row['Project']
@@ -307,7 +303,7 @@ class PlanAdjustmentValidator:
         # 마스터 데이터에서 라인과 시프트 용량 가져오기
         capacity = self.get_line_capacity(line, time)
         
-        print("___________________________",current_allocation,new_qty,capacity)
+        print("validate_capacity",current_allocation,new_qty,capacity)
         # 용량 검증
         if capacity is not None:  # 용량 정보가 있는 경우만 검증
             # 생산 능력이 명시적으로 0인 경우 
@@ -336,7 +332,7 @@ class PlanAdjustmentValidator:
         # 아이템 또는 프로젝트의 납기일 확인
         due_time = None
         item_project = item[3:7] if len(item) >= 7 else ""
-        print("____________________________________",self.due_dates)
+        print("validate_due_date",self.due_dates)
         
         # 직접 아이템에 대한 납기일 확인
         if item in self.due_dates:
@@ -345,7 +341,6 @@ class PlanAdjustmentValidator:
         elif item_project in self.due_dates:
             due_time = self.due_dates[item_project]
 
-            
         # 납기일 검증
         if due_time is not None and time > due_time:
             return False, f"Item {item} past due: shift {due_time}."
@@ -453,10 +448,6 @@ class PlanAdjustmentValidator:
         for valid, message in validations:
             if not valid: 
                 return False, message
-        
-        # # 제조동 비율 제약조건 검증 (임시 데이터셋 생성 후 검증)
-        # temp_result_data = self._calculate_adjusted_data(line, time, item, new_qty, source_line, source_time, item_id)
-        # valid, message = self.validate_building_ratios(temp_result_data)
    
         if not valid:
             return False, message

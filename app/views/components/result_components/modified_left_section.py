@@ -777,13 +777,8 @@ class ModifiedLeftSection(QWidget):
         )
         
         if file_path:
-            if self._mvc_mode:
-                print("LeftSection: MVC 모드 - ResultPage를 통한 파일 로드")
-                self.parent_page.load_result_file(file_path)
-            else:
-                print("LeftSection: Legacy 모드 - 직접 파일 로드")
-                # Legacy 처리
-                pass
+            print("LeftSection: MVC 모드 - ResultPage를 통한 파일 로드")
+            self.parent_page.load_result_file(file_path)
 
     """
     아이템 목록과 그리드 초기화하는 메서드
@@ -1041,24 +1036,18 @@ class ModifiedLeftSection(QWidget):
             print("LeftSection: 그리드 위젯이 없음 - 사전할당 상태 적용 스킵")
             return
         
-        applied_count = 0
-        total_items = 0
-        
         for row_containers in self.grid_widget.containers:
             for container in row_containers:
                 for item in container.items:
-                    total_items += 1
                     if hasattr(item, 'item_data') and item.item_data and 'Item' in item.item_data:
                         item_code = item.item_data['Item']
                         
                         # 해당 아이템이 사전할당 목록에 있는지 확인
                         if item_code in self.pre_assigned_items:
                             item.set_pre_assigned_status(True)
-                            applied_count += 1
                         else:
                             item.set_pre_assigned_status(False)
-        
-        print(f"LeftSection: 사전할당 상태 적용 완료 - {applied_count}/{total_items}개 아이템")
+
 
     def set_pre_assigned_items(self, pre_assigned_items):
         """🔧 사전할당 아이템 목록 설정 및 즉시 적용"""

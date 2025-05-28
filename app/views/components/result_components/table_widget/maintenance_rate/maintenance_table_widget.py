@@ -251,7 +251,7 @@ class MaintenanceTableWidget(CustomTable):
                         
                         # 2. ID로 찾지 못한 경우에만 (Line, Time, Item) 조합 키 확인 (후순위)
                         if not is_modified:
-                            current_key = ItemKeyManager.get_item_key(line_value, shift_value, item_value)
+                            current_key = ItemKeyManager.get_item_by_not_id(line_value, shift_value, item_value)
                             is_modified = current_key in modified_item_keys
                     elif item_field == 'RMC':
                         is_modified = False

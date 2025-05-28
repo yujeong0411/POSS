@@ -567,8 +567,8 @@ class FilterWidget(QWidget):
         for checkbox in checkboxes_to_update:
             checkbox.blockSignals(False)
 
-        # ★ 마지막에 한 번만 필터 변경 신호 발생
-        self.filter_changed.emit(self.filter_states.copy())
+        # # ★ 마지막에 한 번만 필터 변경 신호 발생
+        # self.filter_changed.emit(self.filter_states.copy())
 
     def sort_lines_by_building(self, lines):
         """

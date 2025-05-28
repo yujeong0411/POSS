@@ -2,13 +2,13 @@ from PyQt5.QtWidgets import QPushButton, QHBoxLayout, QStackedWidget, QSizePolic
 from PyQt5.QtCore import Qt, pyqtSignal, QObject
 from PyQt5.QtGui import QCursor
 from app.resources.styles.result_style import ResultStyles
-from app.views.components.result_components.right_section.summary_tab import SummaryTab
-from app.views.components.result_components.right_section.capa_tab import CapaTab
-from app.views.components.result_components.right_section.material_tab import MaterialTab
-from app.views.components.result_components.right_section.plan_tab import PlanTab
-from app.views.components.result_components.right_section.portcapa_tab import PortCapaTab
-from app.views.components.result_components.right_section.shipment_tab import ShipmentTab
-from app.views.components.result_components.right_section.splitview_tab import SplitViewTab
+from app.views.components.result_components.right_section.tabs.summary_tab import SummaryTab
+from app.views.components.result_components.right_section.tabs.capa_tab import CapaTab
+from app.views.components.result_components.right_section.tabs.material_tab import MaterialTab
+from app.views.components.result_components.right_section.tabs.plan_tab import PlanTab
+from app.views.components.result_components.right_section.tabs.portcapa_tab import PortCapaTab
+from app.views.components.result_components.right_section.tabs.shipment_tab import ShipmentTab
+from app.views.components.result_components.right_section.tabs.splitview_tab import SplitViewTab
 from app.resources.fonts.font_manager import font_manager
 from app.models.common.screen_manager import *
 

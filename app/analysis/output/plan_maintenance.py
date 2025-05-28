@@ -104,7 +104,7 @@ class PlanMaintenanceRate:
                 if item_id:
                     key = f"id_{item_id}"
                 else:
-                    key = ItemKeyManager.get_item_key(line, time, item)
+                    key = ItemKeyManager.get_item_by_not_id(line, time, item)
                     
                 self.modified_items[key] = new_qty
                 

@@ -19,7 +19,7 @@ class ItemKeyManager:
         고유 키 문자열
     """
     @staticmethod
-    def get_item_key(line: Any, time: Any, item: Any) -> str:
+    def get_item_by_not_id(line: Any, time: Any, item: Any) -> str:
         # None이나 빈 값 처리
         line_str = str(line) if line is not None else ""
         time_str = str(time) if time is not None else ""
@@ -173,3 +173,15 @@ class ItemKeyManager:
                 item_id = item_or_data.get('_id')
         
         return item_id
+    
+    @staticmethod
+    def get_item_key(item_info: Dict[str, Any]) -> str:
+        """키 생성 - ID 우선, 없으면 Line-Time-Item 조합"""
+        if '_id' in item_info and item_info['_id']:
+            return str(item_info['_id'])
+        else:
+            return ItemKeyManager.get_item_key(
+                item_info.get('Line'),
+                item_info.get('Time'), 
+                item_info.get('Item')
+            )

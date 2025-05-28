@@ -18,7 +18,7 @@ from app.views.components.result_components.modified_left_section import Modifie
 from app.views.components.result_components.table_widget.split_allocation_widget import SplitAllocationWidget
 from app.views.components.result_components.items_container import ItemsContainer
 from app.views.components.result_components.right_section.adj_error_manager import AdjErrorManager
-from app.views.components.result_components.right_section.tab_manager import TabManager
+from app.views.components.result_components.right_section.tabs.tab_manager import TabManager
 from app.views.components.result_components.table_widget.split_allocation_widget import SplitAllocationWidget
 from app.views.components.result_components.right_section.kpi_widget import KpiWidget
 from app.models.output.assignment_model import AssignmentModel
@@ -328,10 +328,14 @@ class ResultPage(QWidget):
         if self.plan_maintenance_widget is None:
             self._setup_widget_references()
 
-        # # 🔧 핵심: 사전할당 정보를 LeftSection에 먼저 전달
-        # if hasattr(self, 'pre_assigned_items') and hasattr(self, 'left_section'):
-        #     print(f"ResultPage: 사전할당 정보를 LeftSection에 전달 - {len(self.pre_assigned_items)}개")
-        #     self.left_section.set_pre_assigned_items(self.pre_assigned_items)
+        # 🔧 핵심: 사전할당 정보를 LeftSection에 먼저 전달
+        if hasattr(self, 'pre_assigned_items') and hasattr(self, 'left_section'):
+            print(f"ResultPage: 사전할당 정보를 LeftSection에 전달 - {len(self.pre_assigned_items)}개")
+            if len(self.pre_assigned_items) > 0:
+                print(f"[DEBUG] 사전할당 아이템 샘플: {list(self.pre_assigned_items)[:5]}...")
+            self.left_section.set_pre_assigned_items(self.pre_assigned_items)
+        else:
+            print("ResultPage: 사전할당 정보 없음 또는 LeftSection 없음")
         
         # 분석 결과로 위젯 업데이트 (재분석 없음)
         self._update_widgets_with_analysis_results(analysis_results)
@@ -341,10 +345,6 @@ class ResultPage(QWidget):
         print("ResultPage: UI만 업데이트 (분석 없음)")
         
         self.result_data = df
-
-        # # 🔧 핵심: 사전할당 정보를 LeftSection에 먼저 전달 (조정 시에도)
-        # if hasattr(self, 'pre_assigned_items') and hasattr(self, 'left_section'):
-        #     self.left_section.set_pre_assigned_items(self.pre_assigned_items)
         
         # 분석 결과로 위젯 업데이트 (재분석 없음)
         self._update_widgets_with_analysis_results(analysis_results)
@@ -600,50 +600,11 @@ class ResultPage(QWidget):
         assignment_result = results.get('assignment_result')
         pre_assigned_items = results.get('pre_assigned_items', [])
         optimization_metadata = results.get('optimization_metadata', {})
-
-        print("=== 최적화 결과 분석 ===")
-        print(f"1. assignment_result 타입: {type(assignment_result)}")
-        print(f"2. assignment_result 크기: {len(assignment_result) if hasattr(assignment_result, '__len__') else 'N/A'}")
-        print(f"3. pre_assigned_items 타입: {type(pre_assigned_items)}")
-        print(f"4. pre_assigned_items 크기: {len(pre_assigned_items)}")
-
-        # assignment_result가 DataFrame인 경우
-        if hasattr(assignment_result, 'columns'):
-            print(f"5. assignment_result 컬럼: {assignment_result.columns.tolist()}")
-            
-            # Type 컬럼이 있다면 사전할당 여부 확인
-            if 'Type' in assignment_result.columns:
-                type_counts = assignment_result['Type'].value_counts()
-                print(f"6. Type별 개수: {type_counts}")
-                
-            # Item 컬럼에서 고유 아이템 수 확인
-            if 'Item' in assignment_result.columns:
-                unique_items = assignment_result['Item'].nunique()
-                total_rows = len(assignment_result)
-                print(f"7. 고유 아이템 수: {unique_items}")
-                print(f"8. 총 행 수: {total_rows}")
-                
-                # 사전할당 아이템과 결과의 교집합 확인
-                result_items = set(assignment_result['Item'].unique())
-                pre_assigned_set = set(pre_assigned_items)
-                
-                intersection = result_items & pre_assigned_set
-                only_in_result = result_items - pre_assigned_set
-                only_in_pre_assigned = pre_assigned_set - result_items
-                
-                print(f"9. 결과에 있는 사전할당 아이템: {len(intersection)}개")
-                print(f"10. 결과에만 있는 아이템: {len(only_in_result)}개")
-                print(f"11. 사전할당에만 있는 아이템: {len(only_in_pre_assigned)}개")
-                
-                if only_in_pre_assigned:
-                    print(f"    사전할당에만 있는 아이템 샘플: {list(only_in_pre_assigned)[:5]}")
-                    
-        print("========================")
-            
-        # 사전할당 아이템 저장 
+        
+        # 사전할당 아이템을 초기화 단계에서 먼저 저장
         self.pre_assigned_items = set(pre_assigned_items)
         print(f"[DEBUG] 최적화 결과에서 사전할당 아이템 {len(self.pre_assigned_items)}개 설정")
-        
+
         print("2. set_optimization_result : 컨트롤러 초기화 시작")
         # ─── MVC 구조 초기화 ───
         # 1) 기존 PlanAdjustmentValidator를 재사용해 validator 생성
@@ -673,15 +634,12 @@ class ResultPage(QWidget):
         # 7) 초기 데이터 로드 (시그널 연결 전에)
         controller.initialize_views()
         print("6. 초기 데이터 설정 완료")
+
         
         # 8) 시그널 연결 (초기화 후 마지막에 수행)
         print("7. 시그널 연결 시작")
         controller.connect_signals()
         print("8. 시그널 연결 완료")
-
-        # 사전할당 정보를 left_section에 전달
-        self.left_section.pre_assigned_items = self.pre_assigned_items.copy()
-        print(f"[DEBUG] left_section에 사전할당 정보 전달: {len(self.left_section.pre_assigned_items)}개")
         
         # 메타데이터 필요시 - 추후 삭제
         self.optimization_metadata = optimization_metadata
@@ -1233,12 +1191,6 @@ class ResultPage(QWidget):
         self.error_manager.add_validation_error(item_info, error_message)
 
     """
-    조정검증 에러 제거
-    """
-    def remove_validation_error(self, item_info):
-        self.error_manager.remove_validation_error(item_info)
-
-    """
     에러 아이템 navigation 및 highlight
     """
     def navigate_to_error_item(self, error_info):
@@ -1253,30 +1205,52 @@ class ResultPage(QWidget):
         
         # 그리드에서 해당 아이템 찾기
         found_item = None
-        target_line = str(item_info.get('Line', ''))
-        target_time = str(item_info.get('Time', ''))
-        target_item = str(item_info.get('Item', ''))
         
-        for row_idx, row_containers in enumerate(self.left_section.grid_widget.containers):
-            for col_idx, container in enumerate(row_containers):
-                for item in container.items:
-                    if hasattr(item, 'item_data') and item.item_data:
-                        current_line = str(item.item_data.get('Line', ''))
-                        current_time = str(item.item_data.get('Time', ''))
-                        current_item = str(item.item_data.get('Item', ''))
-                        
-                        if (current_line == target_line and 
-                            current_time == target_time and 
-                            current_item == target_item):
+        if '_id' in item_info and item_info['_id']:
+            # ID로 아이템 찾기
+            target_id = item_info['_id']
+            print(f"[DEBUG] ID로 에러 아이템 검색: {target_id}")
+            
+            for row_idx, row_containers in enumerate(self.left_section.grid_widget.containers):
+                for col_idx, container in enumerate(row_containers):
+                    for item in container.items:
+                        if (hasattr(item, 'item_data') and item.item_data and 
+                            item.item_data.get('_id') == target_id):
                             found_item = item
-                            print(f"아이템 발견: 행{row_idx}, 열{col_idx}")
+                            print(f"ID로 아이템 발견: 행{row_idx}, 열{col_idx}")
                             break
                     if found_item:
                         break
                 if found_item:
                     break
-            if found_item:
-                break
+
+        # ID로 찾지 못한 경우 기존 방식으로 찾기
+        if not found_item:
+            print("[DEBUG] ID로 찾지 못함, Line-Time-Item으로 검색")
+            target_line = str(item_info.get('Line', ''))
+            target_time = str(item_info.get('Time', ''))
+            target_item = str(item_info.get('Item', ''))
+            
+            for row_idx, row_containers in enumerate(self.left_section.grid_widget.containers):
+                for col_idx, container in enumerate(row_containers):
+                    for item in container.items:
+                        if hasattr(item, 'item_data') and item.item_data:
+                            current_line = str(item.item_data.get('Line', ''))
+                            current_time = str(item.item_data.get('Time', ''))
+                            current_item = str(item.item_data.get('Item', ''))
+                            
+                            if (current_line == target_line and 
+                                current_time == target_time and 
+                                current_item == target_item):
+                                found_item = item
+                                print(f"아이템 발견: 행{row_idx}, 열{col_idx}")
+                                break
+                        if found_item:
+                            break
+                    if found_item:
+                        break
+                if found_item:
+                    break
 
         if found_item:
             # 아이템 선택 및 강조

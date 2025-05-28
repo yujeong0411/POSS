@@ -71,8 +71,8 @@ class PlanDataManager(QObject):
             if pd.isna(line) or pd.isna(time) or pd.isna(item) or pd.isna(rmc):
                 continue
                 
-            item_key = ItemKeyManager.get_item_key(line, time, item)
-            rmc_key = ItemKeyManager.get_item_key(line, time, rmc)
+            item_key = ItemKeyManager.get_item_by_not_id(line, time, item)
+            rmc_key = ItemKeyManager.get_item_by_not_id(line, time, rmc)
             
             # 아이템-RMC 매핑 저장
             self.item_to_rmc_map[item_key] = rmc_key
@@ -186,10 +186,10 @@ class PlanDataManager(QObject):
         if item_id:
             item_key = f"id_{item_id}"  # ID 기반 키
         else:
-            item_key = ItemKeyManager.get_item_key(line, time, item) 
+            item_key = ItemKeyManager.get_item_by_not_id(line, time, item) 
 
         # 두 가지 키 모두 저장 - ID 기반 키와 (Line, Time, Item) 키
-        line_time_item_key = ItemKeyManager.get_item_key(line, time, item)
+        line_time_item_key = ItemKeyManager.get_item_by_not_id(line, time, item)
 
         # rmc 관계 확인 및 추가
         if item_key not in self.item_to_rmc_map and 'RMC' in self.current_plan.columns:
@@ -198,7 +198,7 @@ class PlanDataManager(QObject):
             if same_item_mask.any():
                 rmc = self.current_plan.loc[same_item_mask, 'RMC'].iloc[0]
                 if not pd.isna(rmc):
-                    rmc_key = ItemKeyManager.get_item_key(line, time, rmc)
+                    rmc_key = ItemKeyManager.get_item_by_not_id(line, time, rmc)
                     print(f"아이템-rmc 키 매핑 추가: {item_key}->{rmc_key}")
 
                     # 아이템 - rmc 매핑 저장

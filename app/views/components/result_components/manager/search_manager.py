@@ -1,5 +1,4 @@
 from PyQt5.QtCore import QObject, QTimer
-import time
 
 """
 검색 관련 로직 담당

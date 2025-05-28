@@ -15,6 +15,7 @@ from .manager.data_manager import DataManager
 from .manager.filter_manager import FilterManager
 from .manager.search_manager import SearchManager
 
+
 class ModifiedLeftSection(QWidget):
     # 데이터 변경을 통합해서 한 번만 내보내는 시그널
     viewDataChanged = pyqtSignal(pd.DataFrame)  # 수정 후 변경된 DataFrame을 전달
@@ -231,7 +232,7 @@ class ModifiedLeftSection(QWidget):
         # 범례 위젯을 직접 FilterManager에 연결 
         self.legend_widget.filter_changed.connect(self.filter_manager.apply_legend_filters)
         print("[LeftSection] 매니저 시그널 연결 완료")
-        
+
     """
     데이터프레임 타입 정규화
     """

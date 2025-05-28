@@ -506,50 +506,20 @@ class FilterManager(QObject):
 
         print(f"→ 필터 상태 - shortage: {shortage_filter}, shipment: {shipment_filter}, pre_assigned: {pre_assigned_filter}")
 
-        updated_count = 0
-        
         # 모든 아이템에 상태선 적용
         for row_containers in self.left_section.grid_widget.containers:
             for container in row_containers:
                 for item in container.items:
                     # 상태선 설정
                     if hasattr(item, 'show_shortage_line'):
-                        new_state = shortage_filter and getattr(item, 'is_shortage', False)
-                        if item.show_shortage_line != new_state:
-                            item.show_shortage_line = new_state
-                            updated_count += 1
-                            
+                        item.show_shortage_line = shortage_filter and getattr(item, 'is_shortage', False)
                     if hasattr(item, 'show_shipment_line'):
-                        new_state = shipment_filter and getattr(item, 'is_shipment_failure', False)
-                        if item.show_shipment_line != new_state:
-                            item.show_shipment_line = new_state
-                            updated_count += 1
-                            
+                        item.show_shipment_line = shipment_filter and getattr(item, 'is_shipment_failure', False)
                     if hasattr(item, 'show_pre_assigned_line'):
-                        new_state = pre_assigned_filter and getattr(item, 'is_pre_assigned', False)
-                        if item.show_pre_assigned_line != new_state:
-                            item.show_pre_assigned_line = new_state
-                            updated_count += 1
+                        item.show_pre_assigned_line = pre_assigned_filter and getattr(item, 'is_pre_assigned', False)
 
                     # 상태선 업데이트
                     item.update()
-        
-        print(f"→ {updated_count}개 아이템 상태선 업데이트됨")
-
-        # # 모든 아이템에 상태선 적용
-        # for row_containers in self.left_section.grid_widget.containers:
-        #     for container in row_containers:
-        #         for item in container.items:
-        #             # 상태선 설정
-        #             if hasattr(item, 'show_shortage_line'):
-        #                 item.show_shortage_line = shortage_filter and getattr(item, 'is_shortage', False)
-        #             if hasattr(item, 'show_shipment_line'):
-        #                 item.show_shipment_line = shipment_filter and getattr(item, 'is_shipment_failure', False)
-        #             if hasattr(item, 'show_pre_assigned_line'):
-        #                 item.show_pre_assigned_line = pre_assigned_filter and getattr(item, 'is_pre_assigned', False)
-
-        #             # 상태선 업데이트
-        #             item.update()
         
         print("=== [DEBUG] 범례 필터 적용 완료 ===")
 

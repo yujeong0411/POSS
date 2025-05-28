@@ -41,6 +41,16 @@ class ModifiedLeftSection(QWidget):
         self._signals_connected = False
         self._mvc_mode = False
 
+        # ===== 배치 업데이트 최적화 추가 =====
+        self._batch_update_timer = QTimer()
+        self._batch_update_timer.setSingleShot(True)
+        self._batch_update_timer.timeout.connect(self._apply_batch_updates)
+        self._pending_updates = []
+        self._last_update_time = 0
+
+        # 중복 업데이트 방지 플래그
+        self._is_updating = False
+
         # ===== 검색 최적화 관련 추가 =====
         self.search_index_manager = SearchIndexManager()
         self.search_result_sorter = SearchResultSorter()
@@ -81,7 +91,7 @@ class ModifiedLeftSection(QWidget):
         }
 
         # 시그널 연결은 명시적으로 호출할 때만
-        print("ModifiedLeftSection 초기화 완료 - 시그널 연결 보류, 검색 인덱스 매니저 준비됨")
+        print("ModifiedLeftSection 초기화 완료 - 시그널 연결 보류, 배치 업데이트 최적화 적용")
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -2415,50 +2425,46 @@ class ModifiedLeftSection(QWidget):
     """
 
     def update_from_model(self, model_df=None):
-        """모델로부터 UI 업데이트 - 공통 로직 활용"""
+        """모델로부터 UI 업데이트 - 배치 처리로 최적화"""
+        import time
+
         print("ModifiedLeftSection: update_from_model 호출")
 
-        if not self._mvc_mode:
-            print("WARNING: 레거시 모드에서 update_from_model이 호출됨 - 하지만 처리 계속")
+        # ===== 중복 처리 즉시 차단 =====
+        if self._is_updating:
+            print("[배치최적화] 업데이트 진행 중 - 중복 요청 무시")
+            return
+
+        current_time = time.time()
+
+        # ===== 짧은 시간 내 중복 요청 배치 처리 =====
+        if current_time - self._last_update_time < 0.1:  # 100ms 내 중복 요청
+            print(f"[배치최적화] 배치 처리 대기열에 추가 - {len(self._pending_updates) + 1}번째")
+
+            self._pending_updates.append({
+                'type': 'model_update',
+                'data': model_df,
+                'timestamp': current_time
+            })
+
+            # 타이머 재시작 (마지막 요청 후 100ms 대기)
+            self._batch_update_timer.start(100)
+            return
+
+        # ===== 즉시 처리 (첫 번째 요청) =====
+        self._last_update_time = current_time
+        self._is_updating = True
 
         try:
-            # ===== 1. 모델 데이터 가져오기 =====
-            if model_df is None:
-                if hasattr(self, 'controller') and self.controller:
-                    model_df = self.controller.model.get_dataframe()
-                    print("[단순화] 컨트롤러에서 데이터 가져옴")
-                else:
-                    print("[단순화] 모델 데이터가 없습니다.")
-                    return
+            print(f"[배치최적화] 즉시 처리 시작")
+            self._perform_single_update(model_df)
 
-            if model_df is None:
-                print("[단순화] 데이터가 없습니다.")
-                return
+            # 대기 중인 요청이 있으면 타이머 시작
+            if self._pending_updates:
+                self._batch_update_timer.start(100)
 
-            # ===== 2. 공통 UI 업데이트 실행 =====
-            success = self._update_ui_components(
-                data_df=model_df,
-                source="model",
-                preserve_search=True,  # 모델 변경이므로 검색 상태 보존
-                preserve_filters=True  # 모델 변경이므로 필터 상태 보존
-            )
-
-            if not success:
-                print("[단순화] UI 업데이트 실패")
-                return
-
-            # ===== 3. model 모드만의 고유 작업들 =====
-
-            # 출하 분석 즉시 업데이트 (모델 변경 후 분석 갱신)
-            self.trigger_shipment_analysis()
-            print("[단순화] 출하 분석 업데이트 요청")
-
-            print("[단순화] update_from_model 완료")
-
-        except Exception as e:
-            print(f"[단순화] update_from_model 오류: {e}")
-            import traceback
-            traceback.print_exc()
+        finally:
+            self._is_updating = False
 
     """
     복사된 아이템 처리

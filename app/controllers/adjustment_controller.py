@@ -26,7 +26,8 @@ class AdjustmentController(QObject):
 
         # 초기화 상태 추적
         self._views_initialized = False
-        
+        self._processing_move = False
+
     """
     ResultPage 참조 설정
     """
@@ -173,42 +174,34 @@ class AdjustmentController(QObject):
     - Controller가 모든 셀 이동 로직 처리
     - 필요시 추가 로직 (시각화 업데이트 등) 수행
     """
-    def _on_cell_moved(self, item: object, old_data: Dict, new_data: Dict):
-        code = new_data.get('Item')
-        if code:
-            item_id = new_data.get('_id')  # id 추출
 
-            # 이전 위치 정보 추출
-            old_line = old_data.get('Line')
-            old_time = old_data.get('Time') 
-            
-            # 새 위치 정보 추출
-            new_line = new_data.get('Line')
-            new_time = new_data.get('Time')
-            
-            print(f"Controller: 셀 이동 {code} @ {old_line}-{old_time} -> {new_line}-{new_time}")
-                
-            # 올바른 순서로 파라미터 전달
-            self.model.move_item(
-                code,         # item
-                old_line,     # old_line
-                old_time,     # old_time
-                new_line,     # new_line
-                new_time,     # new_time
-                item_id       # item_id
-            )
-            
-            # 1. Model에 데이터 변경 알림
-            # self.model.move_item(code, new_data['Line'], new_data['Time'], item_id)
-            
-            # 2. 필요시 추가 작업 (시각화 업데이트, 분석 등)
-            # 예: 부모 컴포넌트에 셀 이동 이벤트 전달
-            if hasattr(self.view, 'parent') and hasattr(self.view.parent(), 'on_cell_moved_from_controller'):
-                self.view.parent().on_cell_moved_from_controller(item, old_data, new_data)
-            
-            print(f"Controller: 셀 이동 처리 완료")
-        QTimer.singleShot(200, lambda: self._ensure_item_visible(item_id))
-        print(f"셀 이동 후 스크롤 예약됨: ID={item_id}")
+    def _on_cell_moved(self, item, old_data, new_data):
+        # 중복 처리 방지
+        if self._processing_move:
+            print("Controller: 이동 처리 중복 방지")
+            return
+
+        self._processing_move = True
+
+        try:
+            code = new_data.get('Item')
+            if code:
+                item_id = new_data.get('_id')
+                old_line = old_data.get('Line')
+                old_time = old_data.get('Time')
+                new_line = new_data.get('Line')
+                new_time = new_data.get('Time')
+
+                print(f"Controller: 셀 이동 {code} @ {old_line}-{old_time} -> {new_line}-{new_time}")
+
+                self.model.move_item(code, old_line, old_time, new_line, new_time, item_id)
+
+                # 스크롤 처리는 한 번만
+                QTimer.singleShot(200, lambda: self._ensure_item_visible(item_id))
+                print(f"셀 이동 후 스크롤 예약됨: ID={item_id}")
+        finally:
+            # 처리 완료 후 플래그 해제
+            QTimer.singleShot(100, lambda: setattr(self, '_processing_move', False))
 
     """아이템 ID를 기반으로 해당 아이템으로 스크롤"""
     def _ensure_item_visible(self, item_id):

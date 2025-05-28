@@ -117,37 +117,37 @@ class AssignmentModel(QObject):
     """
     아이템을 new_line, new_shift로 이동
     """
-    def move_item(self, item: str, old_line: str, old_time: int, new_line: str, new_time: int, item_id: str = None):
-        # ID가 제공된 경우 ID로 찾기
+
+    def move_item(self, item, old_line, old_time, new_line, new_time, item_id=None):
+        # 변경사항이 없으면 조기 종료 (기존 코드 유지)
+        if str(old_line) == str(new_line) and int(old_time) == int(new_time):
+            return
+
+        # ID 또는 조건으로 마스크 생성
         if item_id:
             mask = ItemKeyManager.create_mask_by_id(self._df, item_id)
         else:
-            # 기존 방식으로 찾기
             mask = ItemKeyManager.create_mask_for_item(self._df, old_line, old_time, item)
 
         if not mask.any():
-            print(f"Model: 해당 아이템({item}, {old_line}, {old_time})을 찾을 수 없습니다.")
+            print(f"Model: 해당 아이템을 찾을 수 없습니다.")
             return
-        
-        # 변경 사항이 없으면 업데이트하지 않음
-        if str(old_line) == str(new_line) and int(old_time) == int(new_time):
-            return  # 변경 없음, 조기 종료
-    
+
         # Line/Time 컬럼 업데이트
         self._df.loc[mask, 'Line'] = str(new_line)
         self._df.loc[mask, 'Time'] = int(new_time)
 
-        # 뷰에 데이터 변경 알림
-        self.modelDataChanged.emit()
-
-        # 이동 후 검증 실행
+        # 검증과 시그널을 한 번에 처리
         error_msg = self._validate_item(item, new_line, new_time, item_id)
         row = self._df.loc[mask].iloc[0].to_dict()
-        self.validationFailed.emit(row, error_msg)
 
-        # 원본과 현재 데이터 비교하여 변경 여부 확인
+        # 변경 여부 확인
         has_changes = self._check_for_changes()
+
+        # 시그널을 한 번에 발생 (중복 방지)
+        self.validationFailed.emit(row, error_msg)
         self.dataModified.emit(has_changes)
+        self.modelDataChanged.emit()  # 마지막에 한 번만
         
 
     """

@@ -49,275 +49,43 @@ class FilterManager(QObject):
         print("[FilterManager] 필터 적용 완료")
 
     """
-    실제 필터 적용 로직
-    """
-    def _process_filter_changes(self):
-        filter_states = self._pending_filter_changes
-
-        # 현재 활성화된 라인 필터 확인
-        active_lines = []
-        if 'line' in filter_states:
-            for line, is_active in filter_states['line'].items():
-                if is_active:
-                    active_lines.append(line)
-
-        # 현재 활성화된 프로젝트 필터 확인
-        active_projects = []
-        if 'project' in filter_states:
-            for project, is_active in filter_states['project'].items():
-                if is_active:
-                    active_projects.append(project)
-
-        # *** 핵심 수정: 라인과 프로젝트 필터가 모두 없으면 모든 데이터 표시 ***
-        if not active_lines and not active_projects:
-            print("DEBUG: 활성화된 라인/프로젝트가 없음 - 모든 데이터 표시")
-            if hasattr(self.left_section, 'data') and self.left_section.data is not None and not self.left_section.data.empty:
-                all_lines = self.left_section.data['Line'].unique().tolist()
-                self._rebuild_grid_with_filtered_data(all_lines, None)
-            else:
-                self._show_empty_grid()
-            return
-
-        # 활성화된 필터가 있으면 해당 데이터만 표시
-        print(f"DEBUG: 활성화된 라인들: {active_lines}")
-        print(f"DEBUG: 활성화된 프로젝트들: {active_projects}")
-
-        # 라인 필터만 있는 경우
-        if active_lines and not active_projects:
-            self._rebuild_grid_with_filtered_data(active_lines, None)
-        # 프로젝트 필터만 있는 경우
-        elif not active_lines and active_projects:
-            # *** 핵심: 빈 라인 리스트 전달 (필터링된 데이터에서 라인 추출하도록) ***
-            self._rebuild_grid_with_filtered_data(None, active_projects)
-        # 라인과 프로젝트 필터가 모두 있는 경우
-        else:
-            self._rebuild_grid_with_filtered_data(active_lines, active_projects)
-    
-    """
     범례 필터 적용 (상태선 표시)
     """
     def apply_legend_filters(self, filter_states):
         print(f"[FilterManager] 범례 필터 적용: {filter_states}")
         self.left_section.current_filter_states = filter_states
         self._apply_legend_filters_only()
-
         self.filter_applied.emit()
 
     """
-    활성화된 라인과 프로젝트로 그리드 재구성
+    엑셀 필터를 고려한 아이템 표시 여부
     """
-    def _rebuild_grid_with_filtered_data(self, active_lines, active_projects=None):
-        if self.left_section.data is None:
-            return
+    def should_show_item_excel_filter(self, item):
+        if not hasattr(self.left_section, 'current_excel_filter_states') or not hasattr(item, 'item_data'):
+            return True
 
-        try:
-            # 데이터 필터링
-            filtered_data = self.left_section.data.copy()
+        item_data = item.item_data
 
-            # 라인 필터 적용
-            if active_lines:
-                filtered_data = filtered_data[filtered_data['Line'].isin(active_lines)]
+        # 라인 필터 체크
+        if 'Line' in item_data:
+            line = str(item_data['Line'])
+            line_filters = self.left_section.current_excel_filter_states.get('line', {})
+            if line_filters and line in line_filters and not line_filters[line]:
+                return False
 
-            # 프로젝트 필터 적용
-            if active_projects and 'Project' in filtered_data.columns:
-                # NaN 값 처리
-                project_mask = filtered_data['Project'].isin(active_projects)
-                # NaN을 "N/A"로 처리한 경우도 고려
-                if "N/A" in active_projects:
-                    nan_mask = filtered_data['Project'].isna()
-                    project_mask = project_mask | nan_mask
-                filtered_data = filtered_data[project_mask]
+        # 프로젝트 필터 체크
+        if 'Project' in item_data:
+            project = item_data['Project']
+            if pd.isna(project):
+                project = "N/A"
+            else:
+                project = str(project)
 
-            print(f"DEBUG: 필터링 후 데이터 행 수: {len(filtered_data)}")
+            project_filters = self.left_section.current_excel_filter_states.get('project', {})
+            if project_filters and project in project_filters and not project_filters[project]:
+                return False
 
-            if filtered_data.empty:
-                self._show_empty_grid()
-                return
-
-            # *** 핵심 수정: 필터링된 데이터에서 실제 존재하는 라인만 추출 ***
-            actual_lines_in_filtered_data = filtered_data['Line'].unique().tolist()
-            print(f"DEBUG: 필터링된 데이터에 실제 존재하는 라인들: {actual_lines_in_filtered_data}")
-
-            # 라인 정렬 (필터링된 데이터의 라인만 사용)
-            filtered_data['Building'] = filtered_data['Line'].str[0]
-            building_production = filtered_data.groupby('Building')['Qty'].sum()
-            sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
-
-            # *** 실제 데이터가 있는 라인들만 정렬 ***
-            sorted_active_lines = []
-            for building in sorted_buildings:
-                building_lines = [line for line in actual_lines_in_filtered_data if line.startswith(building)]
-                sorted_building_lines = sorted(building_lines)
-                sorted_active_lines.extend(sorted_building_lines)
-
-            # 혹시 누락된 라인이 있으면 추가 (제조동 분류에 실패한 경우)
-            remaining_lines = [line for line in actual_lines_in_filtered_data if line not in sorted_active_lines]
-            if remaining_lines:
-                sorted_active_lines.extend(sorted(remaining_lines))
-
-            print(f"DEBUG: 최종 표시할 라인들: {sorted_active_lines}")
-
-            # 교대 정보 (실제 데이터가 있는 라인만)
-            line_shifts = {}
-            for line in sorted_active_lines:
-                line_shifts[line] = ["Day", "Night"]
-
-            # 행 헤더 (실제 데이터가 있는 라인만)
-            filtered_row_headers = []
-            for line in sorted_active_lines:
-                for shift in ["Day", "Night"]:
-                    filtered_row_headers.append(f"{line}_({shift})")
-
-            print(f"DEBUG: 최종 행 헤더: {filtered_row_headers}")
-
-            # 그리드 재구성
-            self.left_section.grid_widget.setupGrid(
-                rows=len(filtered_row_headers),
-                columns=len(self.left_section.days),
-                row_headers=filtered_row_headers,
-                column_headers=self.left_section.days,
-                line_shifts=line_shifts
-            )
-
-            # 기존 아이템 모두 지우기
-            self.left_section.all_items.clear()
-
-            # 필터링된 데이터로 아이템 추가
-            times = sorted(filtered_data['Time'].unique())
-            shifts = {}
-            for time in times:
-                if int(time) % 2 == 1:
-                    shifts[time] = "Day"
-                else:
-                    shifts[time] = "Night"
-
-            # 데이터를 행/열별로 그룹화
-            grouped_items = {}
-
-            for _, row_data in filtered_data.iterrows():
-                line = row_data['Line']
-                time = row_data['Time']
-                shift = shifts[time]
-                day_idx = (int(time) - 1) // 2
-
-                if day_idx >= len(self.left_section.days):
-                    continue
-
-                row_key = f"{line}_({shift})"
-
-                try:
-                    row_idx = filtered_row_headers.index(row_key)
-                    col_idx = day_idx
-
-                    grid_key = (row_idx, col_idx)
-                    if grid_key not in grouped_items:
-                        grouped_items[grid_key] = []
-
-                    item_data = row_data.to_dict()
-                    qty = item_data.get('Qty', 0)
-                    if pd.isna(qty):
-                        qty = 0
-                    item_data['Qty'] = int(float(qty)) if isinstance(qty, (int, float, str)) else 0
-                    grouped_items[grid_key].append(item_data)
-
-                except ValueError as e:
-                    print(f"필터링된 그리드에서 인덱스 찾기 오류: {e}")
-                    continue
-
-            # 아이템을 그리드에 추가
-            for (row_idx, col_idx), items in grouped_items.items():
-                for item_data in items:
-                    item_info = str(item_data.get('Item', ''))
-                    qty = item_data.get('Qty', 0)
-                    if pd.notna(qty) and qty != 0:
-                        item_info += f"    {qty}"
-
-                    new_item = self.left_section.grid_widget.addItemAt(row_idx, col_idx, item_info, item_data)
-
-                    if new_item:
-                        item_code = item_data.get('Item', '')
-
-                        # 상태 적용
-                        if item_code in self.left_section.pre_assigned_items:
-                            new_item.set_pre_assigned_status(True)
-
-                        if item_code in self.left_section.shipment_failure_items:
-                            failure_info = self.left_section.shipment_failure_items[item_code]
-                            new_item.set_shipment_failure(True, failure_info.get('reason', 'Unknown reason'))
-
-                        if hasattr(self.left_section, 'current_shortage_items') and item_code in self.left_section.current_shortage_items:
-                            shortage_info = self.left_section.current_shortage_items[item_code]
-                            new_item.set_shortage_status(True, shortage_info)
-
-            print("=== [DEBUG] _rebuild_grid_with_filtered_data 완료 ===")
-            print(f"→ 최종 아이템 수: {len(self.left_section.all_items)}")
-            print("→ 범례 필터 적용 직전")
-
-            # 범례 필터도 적용
-            self._apply_legend_filters_only()
-
-            print(f"DEBUG: 필터링된 그리드 재구성 완료 - {len(sorted_active_lines)}개 라인, 프로젝트 필터: {active_projects}")
-
-        except Exception as e:
-            print(f"필터링된 그리드 구성 중 오류: {e}")
-            import traceback
-            traceback.print_exc()
-
-    """
-    빈 그리드 표시 - Clear All 했을 때 사용
-    """
-    def _show_empty_grid(self):
-        try:
-            # 모든 아이템 제거
-            self.left_section.grid_widget.clearAllItems()
-            self.left_section.all_items.clear()
-
-            # 빈 그리드 설정 (최소한의 구조만 유지)
-            self.left_section.grid_widget.setupGrid(
-                rows=0,  # 행 없음
-                columns=len(self.left_section.days),
-                row_headers=[],  # 빈 행 헤더
-                column_headers=self.left_section.days,
-                line_shifts={}  # 빈 라인 시프트
-            )
-
-            print("DEBUG: 빈 그리드 표시 완료")
-
-        except Exception as e:
-            print(f"빈 그리드 표시 중 오류: {e}")
-            import traceback
-            traceback.print_exc()
-
-    """
-    범례 필터만 적용 (상태선 표시)
-    """
-    def _apply_legend_filters_only(self):
-        print("=== [DEBUG] 범례 필터 적용 시작 ===")
-        print(f"→ current_filter_states: {self.left_section.current_filter_states}")
-        if not hasattr(self.left_section, 'grid_widget') or not hasattr(self.left_section.grid_widget, 'containers'):
-            return
-
-        # 범례 필터 상태 확인
-        shortage_filter = self.left_section.current_filter_states.get('shortage', False)
-        shipment_filter = self.left_section.current_filter_states.get('shipment', False)
-        pre_assigned_filter = self.left_section.current_filter_states.get('pre_assigned', False)
-
-        # 모든 아이템에 상태선 적용
-        for row_containers in self.left_section.grid_widget.containers:
-            for container in row_containers:
-                for item in container.items:
-                    # 상태선 설정
-                    if hasattr(item, 'show_shortage_line'):
-                        item.show_shortage_line = shortage_filter and getattr(item, 'is_shortage', False)
-                    if hasattr(item, 'show_shipment_line'):
-                        item.show_shipment_line = shipment_filter and getattr(item, 'is_shipment_failure', False)
-                    if hasattr(item, 'show_pre_assigned_line'):
-                        item.show_pre_assigned_line = pre_assigned_filter and getattr(item, 'is_pre_assigned', False)
-
-                    # 상태선 업데이트
-                    item.update()
-        
-        print("=== [DEBUG] 범례 필터 적용 완료 ===")
+        return True
 
     """
     종합적인 필터 적용 (엑셀 + 범례 + 검색)
@@ -448,33 +216,343 @@ class FilterManager(QObject):
         for container in affected_containers:
             container.adjustSize()
 
+    """
+    상태선만 효율적으로 업데이트 (가시성은 변경하지 않음)
+    """
+    def update_status_lines_only(self, filter_states):
+        if not hasattr(self.left_section, 'grid_widget') or not hasattr(self.left_section.grid_widget, 'containers'):
+            return
+        
+        # 변경된 아이템 추적
+        changed_items = []
+        
+        # 필터 상태 캐싱
+        shortage_filter = filter_states.get('shortage', False)
+        shipment_filter = filter_states.get('shipment', False)
+        pre_assigned_filter = filter_states.get('pre_assigned', False)
+        
+        # 아이템 순회하며 상태선 업데이트
+        for row_containers in self.left_section.grid_widget.containers:
+            for container in row_containers:
+                for item in container.items:
+                    changed = False
+                    
+                    # 각 상태선 확인 및 변경
+                    if hasattr(item, 'show_shortage_line'):
+                        new_state = shortage_filter and getattr(item, 'is_shortage', False)
+                        if item.show_shortage_line != new_state:
+                            item.show_shortage_line = new_state
+                            changed = True
+                            
+                    if hasattr(item, 'show_shipment_line'):
+                        new_state = shipment_filter and getattr(item, 'is_shipment_failure', False)
+                        if item.show_shipment_line != new_state:
+                            item.show_shipment_line = new_state
+                            changed = True
+                            
+                    if hasattr(item, 'show_pre_assigned_line'):
+                        new_state = pre_assigned_filter and getattr(item, 'is_pre_assigned', False)
+                        if item.show_pre_assigned_line != new_state:
+                            item.show_pre_assigned_line = new_state
+                            changed = True
+                    
+                    # 변경된 아이템만 업데이트 대상에 추가
+                    if changed:
+                        changed_items.append(item)
+        
+        # 변경된 아이템만 일괄 업데이트
+        for item in changed_items:
+            item.update()
+
+    """
+    아이템의 상태선 업데이트
+    """
+    def update_item_status_line_visibility(self, item):
+        if not hasattr(self.left_section, 'current_filter_states'):
+            return
+        
+        # 상태 변수 캐싱
+        shortage_filter = self.left_section.current_filter_states.get('shortage', False)
+        shipment_filter = self.left_section.current_filter_states.get('shipment', False)
+        pre_assigned_filter = self.left_section.current_filter_states.get('pre_assigned', False)
+        
+        # 변경 필요 여부 추적
+        need_update = False
+        
+        # 각 상태선 설정 (이전과 다른 경우만 변경)
+        if hasattr(item, 'is_shortage') and hasattr(item, 'show_shortage_line'):
+            new_state = shortage_filter and item.is_shortage
+            if item.show_shortage_line != new_state:
+                item.show_shortage_line = new_state
+                need_update = True
+        
+        if hasattr(item, 'is_shipment_failure') and hasattr(item, 'show_shipment_line'):
+            new_state = shipment_filter and item.is_shipment_failure
+            if item.show_shipment_line != new_state:
+                item.show_shipment_line = new_state
+                need_update = True
+        
+        if hasattr(item, 'is_pre_assigned') and hasattr(item, 'show_pre_assigned_line'):
+            new_state = pre_assigned_filter and item.is_pre_assigned
+            if item.show_pre_assigned_line != new_state:
+                item.show_pre_assigned_line = new_state
+                need_update = True
+        
+        # 변경이 필요한 경우만 repaint 요청
+        if need_update and hasattr(item, 'update'):
+            item.update()
+
+    """
+    활성화된 라인과 프로젝트로 그리드 재구성
+    """
+    def _rebuild_grid_with_filtered_data(self, active_lines, active_projects=None):
+        if self.left_section.data is None:
+            return
+
+        try:
+            # 데이터 필터링
+            filtered_data = self.left_section.data.copy()
+
+            # 라인 필터 적용
+            if active_lines:
+                filtered_data = filtered_data[filtered_data['Line'].isin(active_lines)]
+
+            # 프로젝트 필터 적용
+            if active_projects and 'Project' in filtered_data.columns:
+                # NaN 값 처리
+                project_mask = filtered_data['Project'].isin(active_projects)
+                # NaN을 "N/A"로 처리한 경우도 고려
+                if "N/A" in active_projects:
+                    nan_mask = filtered_data['Project'].isna()
+                    project_mask = project_mask | nan_mask
+                filtered_data = filtered_data[project_mask]
+
+            print(f"DEBUG: 필터링 후 데이터 행 수: {len(filtered_data)}")
+
+            if filtered_data.empty:
+                self._show_empty_grid()
+                return
+
+            #  필터링된 데이터에서 실제 존재하는 라인만 추출 
+            actual_lines_in_filtered_data = filtered_data['Line'].unique().tolist()
+            print(f"DEBUG: 필터링된 데이터에 실제 존재하는 라인들: {actual_lines_in_filtered_data}")
+
+            # 라인 정렬 (필터링된 데이터의 라인만 사용)
+            filtered_data['Building'] = filtered_data['Line'].str[0]
+            building_production = filtered_data.groupby('Building')['Qty'].sum()
+            sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
+
+            # *** 실제 데이터가 있는 라인들만 정렬 ***
+            sorted_active_lines = []
+            for building in sorted_buildings:
+                building_lines = [line for line in actual_lines_in_filtered_data if line.startswith(building)]
+                sorted_building_lines = sorted(building_lines)
+                sorted_active_lines.extend(sorted_building_lines)
+
+            # 혹시 누락된 라인이 있으면 추가 (제조동 분류에 실패한 경우)
+            remaining_lines = [line for line in actual_lines_in_filtered_data if line not in sorted_active_lines]
+            if remaining_lines:
+                sorted_active_lines.extend(sorted(remaining_lines))
+
+            print(f"DEBUG: 최종 표시할 라인들: {sorted_active_lines}")
+
+            # 교대 정보 (실제 데이터가 있는 라인만)
+            line_shifts = {}
+            for line in sorted_active_lines:
+                line_shifts[line] = ["Day", "Night"]
+
+            # 행 헤더 (실제 데이터가 있는 라인만)
+            filtered_row_headers = []
+            for line in sorted_active_lines:
+                for shift in ["Day", "Night"]:
+                    filtered_row_headers.append(f"{line}_({shift})")
+
+            print(f"DEBUG: 최종 행 헤더: {filtered_row_headers}")
+
+            # SearchManager에 그리드 재구성 알림 (그리드 재구성 직전에)
+            if hasattr(self.left_section, 'search_manager'):
+                self.left_section.search_manager.on_grid_rebuilt()
+
+            # 그리드 재구성
+            self.left_section.grid_widget.setupGrid(
+                rows=len(filtered_row_headers),
+                columns=len(self.left_section.days),
+                row_headers=filtered_row_headers,
+                column_headers=self.left_section.days,
+                line_shifts=line_shifts
+            )
+
+            # 기존 아이템 모두 지우기
+            self.left_section.all_items.clear()
+
+            # 필터링된 데이터로 아이템 추가
+            times = sorted(filtered_data['Time'].unique())
+            shifts = {}
+            for time in times:
+                if int(time) % 2 == 1:
+                    shifts[time] = "Day"
+                else:
+                    shifts[time] = "Night"
+
+            # 데이터를 행/열별로 그룹화
+            grouped_items = {}
+
+            for _, row_data in filtered_data.iterrows():
+                line = row_data['Line']
+                time = row_data['Time']
+                shift = shifts[time]
+                day_idx = (int(time) - 1) // 2
+
+                if day_idx >= len(self.left_section.days):
+                    continue
+
+                row_key = f"{line}_({shift})"
+
+                try:
+                    row_idx = filtered_row_headers.index(row_key)
+                    col_idx = day_idx
+
+                    grid_key = (row_idx, col_idx)
+                    if grid_key not in grouped_items:
+                        grouped_items[grid_key] = []
+
+                    item_data = row_data.to_dict()
+                    qty = item_data.get('Qty', 0)
+                    if pd.isna(qty):
+                        qty = 0
+                    item_data['Qty'] = int(float(qty)) if isinstance(qty, (int, float, str)) else 0
+                    grouped_items[grid_key].append(item_data)
+
+                except ValueError as e:
+                    print(f"필터링된 그리드에서 인덱스 찾기 오류: {e}")
+                    continue
+
+            # 아이템을 그리드에 추가
+            for (row_idx, col_idx), items in grouped_items.items():
+                for item_data in items:
+                    item_info = str(item_data.get('Item', ''))
+                    qty = item_data.get('Qty', 0)
+                    if pd.notna(qty) and qty != 0:
+                        item_info += f"    {qty}"
+
+                    new_item = self.left_section.grid_widget.addItemAt(row_idx, col_idx, item_info, item_data)
+
+                    if new_item:
+                        item_code = item_data.get('Item', '')
+
+                        # 상태 적용
+                        if item_code in self.left_section.pre_assigned_items:
+                            new_item.set_pre_assigned_status(True)
+
+                        if item_code in self.left_section.shipment_failure_items:
+                            failure_info = self.left_section.shipment_failure_items[item_code]
+                            new_item.set_shipment_failure(True, failure_info.get('reason', 'Unknown reason'))
+
+                        if hasattr(self.left_section, 'current_shortage_items') and item_code in self.left_section.current_shortage_items:
+                            shortage_info = self.left_section.current_shortage_items[item_code]
+                            new_item.set_shortage_status(True, shortage_info)
+
+            # 범례 필터도 적용
+            self._apply_legend_filters_only()
+
+        except Exception as e:
+            print(f"필터링된 그리드 구성 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
+
+    """
+    빈 그리드 표시 - Clear All 했을 때 사용
+    """
+    def _show_empty_grid(self):
+        try:
+            # SearchManager에 그리드 재구성 알림
+            if hasattr(self.left_section, 'search_manager'):
+                self.left_section.search_manager.on_grid_rebuilt()
+
+            # 모든 아이템 제거
+            self.left_section.grid_widget.clearAllItems()
+            self.left_section.all_items.clear()
+
+            # 빈 그리드 설정 (최소한의 구조만 유지)
+            self.left_section.grid_widget.setupGrid(
+                rows=0,  # 행 없음
+                columns=len(self.left_section.days),
+                row_headers=[],  # 빈 행 헤더
+                column_headers=self.left_section.days,
+                line_shifts={}  # 빈 라인 시프트
+            )
+
+            print("DEBUG: 빈 그리드 표시 완료")
+
+        except Exception as e:
+            print(f"빈 그리드 표시 중 오류: {e}")
+            import traceback
+            traceback.print_exc()
+
+    """
+    범례 필터만 적용 (상태선 표시)
+    """
+    def _apply_legend_filters_only(self):
+        print("=== [DEBUG] 범례 필터 적용 시작 ===")
+        print(f"→ current_filter_states: {self.left_section.current_filter_states}")
+        if not hasattr(self.left_section, 'grid_widget') or not hasattr(self.left_section.grid_widget, 'containers'):
+            print("→ 그리드 위젯이 없음")
+            return
+
+        # 범례 필터 상태 확인
+        shortage_filter = self.left_section.current_filter_states.get('shortage', False)
+        shipment_filter = self.left_section.current_filter_states.get('shipment', False)
+        pre_assigned_filter = self.left_section.current_filter_states.get('pre_assigned', False)
+
+        print(f"→ 필터 상태 - shortage: {shortage_filter}, shipment: {shipment_filter}, pre_assigned: {pre_assigned_filter}")
+
+        updated_count = 0
+        
+        # 모든 아이템에 상태선 적용
+        for row_containers in self.left_section.grid_widget.containers:
+            for container in row_containers:
+                for item in container.items:
+                    # 상태선 설정
+                    if hasattr(item, 'show_shortage_line'):
+                        new_state = shortage_filter and getattr(item, 'is_shortage', False)
+                        if item.show_shortage_line != new_state:
+                            item.show_shortage_line = new_state
+                            updated_count += 1
+                            
+                    if hasattr(item, 'show_shipment_line'):
+                        new_state = shipment_filter and getattr(item, 'is_shipment_failure', False)
+                        if item.show_shipment_line != new_state:
+                            item.show_shipment_line = new_state
+                            updated_count += 1
+                            
+                    if hasattr(item, 'show_pre_assigned_line'):
+                        new_state = pre_assigned_filter and getattr(item, 'is_pre_assigned', False)
+                        if item.show_pre_assigned_line != new_state:
+                            item.show_pre_assigned_line = new_state
+                            updated_count += 1
+
+                    # 상태선 업데이트
+                    item.update()
+        
+        print(f"→ {updated_count}개 아이템 상태선 업데이트됨")
+
+        # # 모든 아이템에 상태선 적용
+        # for row_containers in self.left_section.grid_widget.containers:
+        #     for container in row_containers:
+        #         for item in container.items:
+        #             # 상태선 설정
+        #             if hasattr(item, 'show_shortage_line'):
+        #                 item.show_shortage_line = shortage_filter and getattr(item, 'is_shortage', False)
+        #             if hasattr(item, 'show_shipment_line'):
+        #                 item.show_shipment_line = shipment_filter and getattr(item, 'is_shipment_failure', False)
+        #             if hasattr(item, 'show_pre_assigned_line'):
+        #                 item.show_pre_assigned_line = pre_assigned_filter and getattr(item, 'is_pre_assigned', False)
+
+        #             # 상태선 업데이트
+        #             item.update()
+        
+        print("=== [DEBUG] 범례 필터 적용 완료 ===")
+
+
     
-    """
-    엑셀 필터를 고려한 아이템 표시 여부
-    """
-    def should_show_item_excel_filter(self, item):
-        if not hasattr(self.left_section, 'current_excel_filter_states') or not hasattr(item, 'item_data'):
-            return True
-
-        item_data = item.item_data
-
-        # 라인 필터 체크
-        if 'Line' in item_data:
-            line = str(item_data['Line'])
-            line_filters = self.left_section.current_excel_filter_states.get('line', {})
-            if line_filters and line in line_filters and not line_filters[line]:
-                return False
-
-        # 프로젝트 필터 체크
-        if 'Project' in item_data:
-            project = item_data['Project']
-            if pd.isna(project):
-                project = "N/A"
-            else:
-                project = str(project)
-
-            project_filters = self.left_section.current_excel_filter_states.get('project', {})
-            if project_filters and project in project_filters and not project_filters[project]:
-                return False
-
-        return True
+    

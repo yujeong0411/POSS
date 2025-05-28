@@ -344,5 +344,32 @@ class SearchManager(QObject):
             search_text = self.left_section.search_widget.get_search_text()
             if search_text:
                 print("[SearchManager] 필터 변경 후 검색 재적용")
+                self._invalidate_cache()  # 캐시 무효화 
+                self.search_items(search_text)
+
+    """
+    캐시 무효화 - 그리드 재구성 시 호출
+    """
+    def _invalidate_cache(self):
+        print("[SearchManager] 캐시 무효화")
+        self._last_search_text = ""
+        self._last_search_results = []
+
+    """
+    그리드 재구성 알림 - FilterManager에서 호출
+    """
+    def on_grid_rebuilt(self):
+        print("[SearchManager] 그리드 재구성 알림 받음")
+        # 캐시 완전 초기화
+        self._invalidate_cache()
+        
+        # 현재 검색이 활성화되어 있으면 즉시 재검색
+        if (hasattr(self.left_section, 'search_widget') and 
+            self.left_section.search_widget.is_search_active()):
+            search_text = self.left_section.search_widget.get_search_text()
+            if search_text:
+                print("[SearchManager] 그리드 재구성 후 즉시 재검색")
+                # 강제로 새로운 검색 실행
+                self._last_search_text = ""  # 캐시 우회
                 self.search_items(search_text)
 

@@ -228,7 +228,10 @@ class ModifiedLeftSection(QWidget):
         if hasattr(self.filter_manager, 'filter_applied'):
             self.filter_manager.filter_applied.connect(self.search_manager.reapply_search_if_active)
 
-            print("[LeftSection] 매니저 시그널 연결 완료")
+        # 범례 위젯을 직접 FilterManager에 연결 
+        self.legend_widget.filter_changed.connect(self.filter_manager.apply_legend_filters)
+        print("[LeftSection] 매니저 시그널 연결 완료")
+        
     """
     데이터프레임 타입 정규화
     """
@@ -267,6 +270,34 @@ class ModifiedLeftSection(QWidget):
                     self.apply_search_to_item(item, search_text)
 
     """
+    종합적인 필터 적용 
+    - FilterManager로 위임
+    """
+    def apply_standard_filters(self):
+        return self.filter_manager.apply_standard_filters()
+
+    """
+    상태선만 효율적으로 업데이트 
+    - FilterManager로 위임
+    """
+    def update_status_lines_only(self, filter_states):
+        return self.filter_manager.update_status_lines_only(filter_states)
+
+    """
+    아이템의 상태선 업데이트 
+    - FilterManager로 위임
+    """
+    def update_item_status_line_visibility(self, item):
+        return self.filter_manager.update_item_status_line_visibility(item)
+
+    """
+    엑셀 필터를 고려한 아이템 표시 여부 
+    - FilterManager로 위임
+    """
+    def should_show_item_excel_filter(self, item):
+        return self.filter_manager.should_show_item_excel_filter(item)
+
+    """
     엑셀 스타일 필터 상태 변경 처리
     - 매니저 위임
     """
@@ -295,7 +326,7 @@ class ModifiedLeftSection(QWidget):
             if search_text:
                 # SearchManager 사용
                 self.search_manager.search_items(search_text)
-            print("=== [DEBUG] 전체 필터 적용 종료 ===")
+        print("=== [DEBUG] 전체 필터 적용 종료 ===")
 
     """
     활성화된 라인과 프로젝트로 그리드 재구성
@@ -326,7 +357,35 @@ class ModifiedLeftSection(QWidget):
             return
         
         self.current_filter_states = filter_states
-        self.apply_all_filters()
+        self.filter_manager.apply_legend_filters(filter_states)
+
+    """
+    상태 필터에 따른 아이템 표시 여부 결정 
+    """
+    def should_show_item_legend_filter(self, item):
+        # 모든 필터가 꺼져 있으면 모든 아이템 표시
+        if not any(self.current_filter_states.values()):
+            return True
+        
+        # 각 상태 확인
+        shortage_filter = self.current_filter_states.get('shortage', False)
+        shipment_filter = self.current_filter_states.get('shipment', False)
+        pre_assigned_filter = self.current_filter_states.get('pre_assigned', False)
+        
+        # 아이템 상태 확인
+        is_shortage = hasattr(item, 'is_shortage') and item.is_shortage
+        is_shipment = hasattr(item, 'is_shipment_failure') and item.is_shipment_failure
+        is_pre_assigned = hasattr(item, 'is_pre_assigned') and item.is_pre_assigned
+        
+        # 필터 적용
+        if shortage_filter and not is_shortage:
+            return False
+        if shipment_filter and not is_shipment:
+            return False
+        if pre_assigned_filter and not is_pre_assigned:
+            return False
+        
+        return True
                 
     """
     상태 필터 활성화 요청 처리
@@ -405,6 +464,26 @@ class ModifiedLeftSection(QWidget):
             traceback.print_exc()
 
     """
+    현재 필터 상태에 따라 아이템 가시성 조정 - 원본에 있던 메서드
+    """
+    def apply_visibility_filter(self):
+        if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
+            return
+        
+        self.apply_all_filters()
+
+    """
+    컨테이너 가시성 업데이트 - 원본에 있던 메서드
+    """
+    def container_visibility(self):
+        for row_containers in self.grid_widget.containers:
+            for container in row_containers:
+                if hasattr(container, 'update_visibility'):
+                    container.update_visibility()
+                elif hasattr(container, 'adjustSize'):
+                    container.adjustSize()
+
+    """
     검색 초기화 (SearchWidget의 searchCleared 시그널에 연결)
     - 매니저 위임
     """
@@ -440,14 +519,14 @@ class ModifiedLeftSection(QWidget):
         return self.search_manager.update_result_navigation()
 
     """
-    검색 결과 강조 상태 업데이트 (새로운 헬퍼 메서드)
+    검색 결과 강조 상태 업데이트 
     - 매니저 위임
     """
     def _update_search_highlight(self, old_index, new_index):
         return self.search_manager._update_search_highlight(old_index, new_index)
 
     """
-    현재 검색 결과로 스크롤 (새로운 헬퍼 메서드)
+    현재 검색 결과로 스크롤 
     - 매니저 위임
     """
     def _scroll_to_current_result(self):
@@ -459,6 +538,19 @@ class ModifiedLeftSection(QWidget):
     """
     def apply_search_to_item(self, item, search_text):
         return self.data_manager.apply_search_to_item(item, search_text)
+    
+    """
+    아이템이 검색어와 일치하는지 확인 
+    """
+    def is_search_match(self, item, search_text):
+        if not item or not hasattr(item, 'item_data') or not item.item_data:
+            return False
+        
+        try:
+            item_code = str(item.item_data.get('Item', '')).lower()
+            return search_text in item_code
+        except:
+            return False
 
     """
     그리드에서 아이템이 선택되면 호출되는 함수

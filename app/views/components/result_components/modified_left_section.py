@@ -282,7 +282,8 @@ class ModifiedLeftSection(QWidget):
         self._apply_analysis_results(analysis_results)
         
         # 스크롤 위치 복원
-        self._restore_scroll_position(scroll_position)
+        if scroll_position:
+            QTimer.singleShot(100, lambda: self._restore_scroll_position(scroll_position))
 
     def _apply_analysis_results(self, analysis_results):
         """🎯 분석 결과만 적용 - 재분석 없음"""
@@ -458,12 +459,9 @@ class ModifiedLeftSection(QWidget):
     상태 필터 활성화 요청 처리
     """
     def on_filter_activation_requested(self, status_type):
-        # 출하 상태 필터가 활성화된 경우
-        if status_type == 'shipment':
-            self.data_manager._trigger_analysis()
-        
         # 필터 상태 업데이트 후 필터 적용
         self.current_filter_states[status_type] = True
+        print(f"필터 활성화: {status_type}")
     
     """
     데이터 로드 후 필터 데이터 업데이트
@@ -741,6 +739,14 @@ class ModifiedLeftSection(QWidget):
     """
     def _restore_item_states(self, new_item, new_data):
         item_code = new_data.get('Item', '')
+
+        # 1. 현재 사용자 설정에 따른 상태선 표시 설정
+        if hasattr(self, 'current_filter_states'):
+            new_item.show_shortage_line = self.current_filter_states.get('shortage', False)
+            new_item.show_shipment_line = self.current_filter_states.get('shipment', False)
+            new_item.show_pre_assigned_line = self.current_filter_states.get('pre_assigned', False)
+            
+            print(f"[DEBUG] 현재 필터 상태로 상태선 설정: {self.current_filter_states}")
         
         # 사전할당 상태
         if item_code in self.pre_assigned_items:
@@ -755,6 +761,9 @@ class ModifiedLeftSection(QWidget):
         if hasattr(self, 'current_shortage_items') and item_code in self.current_shortage_items:
             shortage_info = self.current_shortage_items[item_code]
             new_item.set_shortage_status(True, shortage_info)
+            
+        # 상태선 업데이트를 위해 repaint 요청
+        new_item.update()
         
 
     """
@@ -980,6 +989,35 @@ class ModifiedLeftSection(QWidget):
                 print("DEBUG: update_filter_data 직접 호출 완료")
             except Exception as e:
                 print(f"DEBUG: update_filter_data 호출 중 오류: {e}")
+
+            # 모든 새 아이템에 현재 범례 필터 상태 적용
+            print(f"[DEBUG] 아이템 생성 후 현재 필터 상태 적용: {getattr(self, 'current_filter_states', {})}")
+            
+            # *** 핵심 수정: current_filter_states가 없거나 비어있으면 기본값 설정 ***
+            if not hasattr(self, 'current_filter_states') or not self.current_filter_states:
+                # 기본값 설정 (자재부족은 True, 나머지는 False)
+                self.current_filter_states = {
+                    'shortage': True,
+                    'shipment': False,
+                    'pre_assigned': False
+                }
+                print(f"[DEBUG] 기본 필터 상태 설정: {self.current_filter_states}")
+            
+            shortage_show = self.current_filter_states.get('shortage', True)  # 기본값 True
+            shipment_show = self.current_filter_states.get('shipment', False)
+            pre_assigned_show = self.current_filter_states.get('pre_assigned', False)
+
+            # 생성된 모든 아이템에 적용
+            if hasattr(self, 'grid_widget') and hasattr(self.grid_widget, 'containers'):
+                for row_containers in self.grid_widget.containers:
+                    for container in row_containers:
+                        for item in container.items:
+                            item.show_shortage_line = shortage_show
+                            item.show_shipment_line = shipment_show
+                            item.show_pre_assigned_line = pre_assigned_show
+                            item.update()  # 상태선 업데이트
+                            
+            print(f"[DEBUG] 상태선 적용 완료: shortage={shortage_show}, shipment={shipment_show}, pre_assigned={pre_assigned_show}")
 
         except Exception as e:
             # 에러 메시지 표시
@@ -1278,6 +1316,7 @@ class ModifiedLeftSection(QWidget):
                         if hasattr(item, 'is_shipment_failure') and item.is_shipment_failure:
                             item.set_shipment_failure(False, None)
 
+
     """
     스크롤 위치 복원
     """
@@ -1372,12 +1411,10 @@ class ModifiedLeftSection(QWidget):
     def _save_scroll_position(self):
         """스크롤 위치 저장"""
         try:
-            if hasattr(self, 'grid_widget') and hasattr(self.grid_widget, 'scroll_area'):
-                h_bar = self.grid_widget.scroll_area.horizontalScrollBar()
-                v_bar = self.grid_widget.scroll_area.verticalScrollBar()
+            if hasattr(self.grid_widget, 'scroll_area'):
                 return {
-                    'horizontal': h_bar.value(),
-                    'vertical': v_bar.value()
+                    'horizontal': self.grid_widget.scroll_area.horizontalScrollBar().value(),
+                    'vertical': self.grid_widget.scroll_area.verticalScrollBar().value()
                 }
         except:
             pass
@@ -1385,14 +1422,20 @@ class ModifiedLeftSection(QWidget):
 
     def _restore_scroll_position(self, position):
         """스크롤 위치 복원"""
+        if not position:
+            return
+            
         try:
-            if hasattr(self, 'grid_widget') and hasattr(self.grid_widget, 'scroll_area'):
+            if hasattr(self.grid_widget, 'scroll_area'):
                 h_bar = self.grid_widget.scroll_area.horizontalScrollBar()
                 v_bar = self.grid_widget.scroll_area.verticalScrollBar()
+                
                 
                 if 'horizontal' in position:
                     h_bar.setValue(position['horizontal'])
                 if 'vertical' in position:
                     v_bar.setValue(position['vertical'])
-        except:
-            pass
+                
+                print(f"스크롤 위치 복원 완료: v={position['vertical']}, h={position['horizontal']}")
+        except Exception as e:
+            print(f"스크롤 위치 복원 오류: {e}")

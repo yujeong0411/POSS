@@ -3,10 +3,7 @@ from typing import Any, Dict
 import uuid
 import pandas as pd
 from app.utils.item_key_manager import ItemKeyManager
-from app.analysis.output.kpi_score import KpiScore
-from app.analysis.output.material_shortage_analysis import MaterialShortageAnalyzer
-from app.analysis.output.daily_capa_utilization import CapaUtilization
-from app.analysis.output.capa_ratio import CapaRatioAnalyzer
+from app.views.components.result_components.manager.analysis_manager import AnalysisManager
 
 """
 Controller 중심 분석 아키텍처
@@ -22,45 +19,13 @@ class AdjustmentController(QObject):
         self.view = view  # ModifiedLeftSection
         self.error_manager = error_manager
         self.result_page = None  # 명시적으로 초기화 (result_page는 외부에서 설정)
+
+        #b 분석 매니저 생성 - 모든 분석 위임
+        self.analysis_manager = None
         
         # 시그널 연결 상태만 추적 (중복 연결 방지용)
         self._signals_connected = False
         self._views_initialized = False
-
-        # 분석 엔진들 초기화
-        self._analysis_engines = self._initialize_analysis_engines()
-
-    """
-    모든 분석 엔진을 Controller에서 초기화
-    """
-    def _initialize_analysis_engines(self):
-        engines = {}
-        
-        try:
-            # KPI 분석 엔진
-            engines['kpi'] = None  # ResultPage 설정 후 초기화
-            
-            # 자재 분석 엔진
-            engines['material'] = MaterialShortageAnalyzer()
-            
-            # 가동률 분석 엔진
-            engines['utilization'] = CapaUtilization()
-            
-            # 제조동 비율 분석 엔진
-            engines['capa_ratio'] = CapaRatioAnalyzer()
-            
-            print("Controller: 분석 엔진 초기화 완료")
-            
-        except Exception as e:
-            print(f"Controller: 분석 엔진 초기화 오류: {e}")
-            engines = {
-                'kpi': None,
-                'material': None,
-                'utilization': None,
-                'capa_ratio': None
-            }
-    
-        return engines
 
     """
     ResultPage 설정 및 KPI 엔진 초기화
@@ -68,11 +33,10 @@ class AdjustmentController(QObject):
     def set_result_page(self, result_page):
         self.result_page = result_page
 
-        # KPI 엔진 초기화 (ResultPage 필요)
-        if hasattr(result_page, 'main_window'):
-            self._analysis_engines['kpi'] = KpiScore(result_page.main_window)
-            
-        print("Controller: ResultPage 설정 및 KPI 엔진 초기화 완료")
+         # 🔧 분석 매니저에 모든 분석 위임
+        self.analysis_manager = AnalysisManager(result_page, controller=self)
+        print("Controller: 분석 매니저 초기화 완료")
+
 
     """
     초기 데이터로 뷰 초기화 (시그널 연결 전에 호출)
@@ -86,7 +50,7 @@ class AdjustmentController(QObject):
         df = self.model.get_dataframe()
 
          # 초기화는 Controller에서 분석 후 배포
-        analysis_results = self._run_all_analyses(df)
+        analysis_results = self.analysis_manager.run_all_analyses(df)
         
         # View 초기화 (분석 결과와 함께)
         self.view.initialize_with_data(df, analysis_results)
@@ -110,8 +74,14 @@ class AdjustmentController(QObject):
             print("Controller: 시그널이 이미 연결됨.")
             return False
         
+        # 세분화된 Model 시그널들 연결
+        self.model.itemAdded.connect(self._on_item_added)
+        self.model.itemMoved.connect(self._on_item_moved) 
+        self.model.itemDeleted.connect(self._on_item_deleted)
+        self.model.quantityUpdated.connect(self._on_quantity_updated)
+        
         # Model -> Controller (핵심 시그널)
-        self.model.modelDataChanged.connect(self._on_model_change)
+        self.model.modelDataChanged.connect(self._on_model_change)   # 전체 재구성이 필요한 경우만
         print("Controller: modelDataChanged 시그널 연결")
         self.model.validationFailed.connect(self.error_manager.add_validation_error)
         print("Controller: 에러 매니저 시그널 연결")
@@ -122,18 +92,9 @@ class AdjustmentController(QObject):
         if hasattr(self.view, 'itemModified'):
             print("Controller: itemModified 시그널 연결")
             self.view.itemModified.connect(self._on_item_data_changed)
-        
-        # View -> Controller (셀 이동)  
-        if hasattr(self.view, 'cellMoved'):
-            print("Controller: cellMoved 시그널 연결")
-            self.view.cellMoved.connect(self._on_cell_moved)
 
         # View -> Controller (아이템 삭제, 복사)
         if hasattr(self.view, 'grid_widget'):
-            if hasattr(self.view.grid_widget, 'itemRemoved'):
-                print("Controller: itemRemoved 시그널 연결")
-                self.view.grid_widget.itemRemoved.connect(self.on_item_deleted)
-        
             if hasattr(self.view.grid_widget, 'itemCopied'):
                 print("Controller: itemCopied 시그널 연결")
                 self.view.grid_widget.itemCopied.connect(self.on_item_copied)
@@ -151,8 +112,8 @@ class AdjustmentController(QObject):
         
         df = self.model.get_dataframe()
         
-        # Controller에서 모든 분석 실행 (한 번만)
-        analysis_results = self._run_all_analyses(df)
+        # 분석 매니저가 모든 분석 담당
+        analysis_results = self.analysis_manager.run_all_analyses(df)
         
         # 분석 결과와 함께 UI 업데이트 요청 (재분석 없음)
         self.view.update_ui_only(df, analysis_results)
@@ -163,197 +124,7 @@ class AdjustmentController(QObject):
         # Error Manager 업데이트
         self.error_manager.update_error_display()
         
-        print("Controller: 통합 처리 완료")
-
-    def _run_all_analyses(self, df):
-        """🎯 Controller에서 모든 분석 실행 - 단일 진입점"""
-        print("Controller: 모든 분석 실행 시작")
-        
-        if df is None or df.empty:
-            return self._get_empty_results()
-        
-        results = {}
-        
-        try:
-            # 1. KPI 분석
-            if self._analysis_engines.get('kpi'):
-                print("  → KPI 분석")
-                kpi_engine = self._analysis_engines['kpi']
-                
-                # 데이터 설정
-                demand_df = self._get_demand_data()
-                material_analyzer = self._analysis_engines.get('material')
-                kpi_engine.set_data(df, material_analyzer, demand_df)
-                
-                # Base/Adjust 점수 계산
-                base_scores = kpi_engine.calculate_all_scores()
-                
-                # 조정 여부 확인
-                has_adjustments = self._check_for_adjustments()
-                if has_adjustments:
-                    # 조정된 데이터로 다시 계산
-                    adjust_scores = base_scores.copy()  # 임시로 동일
-                    results['kpi'] = {
-                        'base_scores': base_scores,
-                        'adjust_scores': adjust_scores
-                    }
-                else:
-                    results['kpi'] = {
-                        'base_scores': base_scores,
-                        'adjust_scores': {}
-                    }
-            
-            # 2. 자재 부족 분석
-            if self._analysis_engines.get('material'):
-                print("  → 자재 분석")
-                material_engine = self._analysis_engines['material']
-                material_engine.analyze_material_shortage(df)
-                results['material'] = {
-                    'shortage_results': material_engine.shortage_results,
-                    'analyzer': material_engine
-                }
-            
-            # 3. 출하 분석
-            print("  → 출하 분석")
-            shipment_results = self._analyze_shipment(df)
-            results['shipment'] = shipment_results
-            
-            # 4. 가동률 분석
-            if self._analysis_engines.get('utilization'):
-                print("  → 가동률 분석")
-                utilization_engine = self._analysis_engines['utilization']
-                utilization_data = utilization_engine.analyze_utilization(df)
-                results['utilization'] = utilization_data
-            
-            # 5. 제조동 비율 분석
-            if self._analysis_engines.get('capa_ratio'):
-                print("  → 제조동 비율 분석")
-                capa_engine = self._analysis_engines['capa_ratio']
-                
-                has_adjustments = self._check_for_adjustments()
-                if has_adjustments:
-                    comparison_df = self.model.get_comparison_dataframe()
-                    if comparison_df:
-                        results['capa_ratio'] = {
-                            'original': capa_engine.analyze_capa_ratio(comparison_df['original']),
-                            'adjusted': capa_engine.analyze_capa_ratio(comparison_df['adjusted'])
-                        }
-                else:
-                    results['capa_ratio'] = capa_engine.analyze_capa_ratio(data_df=df, is_initial=True)
-            
-            # 6. 기타 분석들...
-            results['plan_maintenance'] = self._analyze_plan_maintenance(df)
-            results['split_allocation'] = self._analyze_split_allocation(df)
-            results['summary'] = self._analyze_summary(df)
-            
-        except Exception as e:
-            print(f"Controller: 분석 중 오류: {e}")
-            import traceback
-            traceback.print_exc()
-            results = self._get_empty_results()
-        
-        print("Controller: 모든 분석 완료")
-        return results
-
-    def _analyze_shipment(self, df):
-        """출하 분석 실행"""
-        try:
-            # ResultPage의 shipment_widget을 통해 분석
-            if (self.result_page and 
-                hasattr(self.result_page, 'shipment_widget') and 
-                self.result_page.shipment_widget):
-                
-                self.result_page.shipment_widget.run_analysis(df)
-                return {'analyzed': True}
-        except Exception as e:
-            print(f"출하 분석 오류: {e}")
-        
-        return {'analyzed': False}
-
-    def _analyze_plan_maintenance(self, df):
-        """계획 유지율 분석"""
-        try:
-            if (self.result_page and 
-                hasattr(self.result_page, 'plan_maintenance_widget') and 
-                self.result_page.plan_maintenance_widget):
-                
-                start_date, end_date = self.result_page.main_window.data_input_page.date_selector.get_date_range()
-                return {
-                    'data': df,
-                    'start_date': start_date,
-                    'end_date': end_date
-                }
-        except Exception as e:
-            print(f"계획 유지율 분석 오류: {e}")
-        
-        return {}
-
-    def _analyze_split_allocation(self, df):
-        """분산 배치 분석"""
-        try:
-            if (self.result_page and 
-                hasattr(self.result_page, 'split_allocation_widget') and 
-                self.result_page.split_allocation_widget):
-                
-                self.result_page.split_allocation_widget.run_analysis(df)
-                return {'analyzed': True}
-        except Exception as e:
-            print(f"분산 배치 분석 오류: {e}")
-        
-        return {'analyzed': False}
-
-    def _analyze_summary(self, df):
-        """요약 분석"""
-        try:
-            if (self.result_page and 
-                hasattr(self.result_page, 'summary_widget') and 
-                self.result_page.summary_widget):
-                
-                self.result_page.summary_widget.run_analysis(df)
-                return {'analyzed': True}
-        except Exception as e:
-            print(f"요약 분석 오류: {e}")
-        
-        return {'analyzed': False}
-
-    def _check_for_adjustments(self):
-        """사용자 조정 여부 확인"""
-        try:
-            if hasattr(self.model, '_original_df') and hasattr(self.model, '_df'):
-                original_df = self.model._original_df
-                current_df = self.model._df
-                
-                if original_df is not None and current_df is not None:
-                    key_columns = ['Line', 'Time', 'Item', 'Qty']
-                    for col in key_columns:
-                        if col in original_df.columns and col in current_df.columns:
-                            if not original_df[col].equals(current_df[col]):
-                                return True
-            return False
-        except:
-            return False
-
-    def _get_demand_data(self):
-        """Demand 데이터 가져오기"""
-        try:
-            from app.models.common.file_store import DataStore
-            organized = DataStore.get("organized_dataframes", {})
-            return organized.get("demand", pd.DataFrame())
-        except:
-            return pd.DataFrame()
-
-    def _get_empty_results(self):
-        """빈 분석 결과 반환"""
-        return {
-            'kpi': {'base_scores': {}, 'adjust_scores': {}},
-            'material': {'shortage_results': {}, 'analyzer': None},
-            'shipment': {'analyzed': False},
-            'utilization': {},
-            'capa_ratio': {},
-            'plan_maintenance': {},
-            'split_allocation': {'analyzed': False},
-            'summary': {'analyzed': False}
-        }
+        print("Controller: UI 업데이트 완료")
 
     """
     아이템 데이터 변경 처리 → Model로 전달
@@ -437,39 +208,233 @@ class AdjustmentController(QObject):
         # 복사된 항목임을 표시하는 플래그 추가
         if '_is_copy' not in data:
             data['_is_copy'] = True
+
+        # 새로운 ID 생성 (중복 방지)
+        data['_id'] = str(uuid.uuid4())
+        print(f"Controller: 복사용 새 ID 생성: {data['_id']}")
             
         # 모델에 명시적으로 추가 - 기본적으로 수량은 0으로 설정
         qty = data.get('Qty', 0)
-        self.model.add_new_item(code, line, time, qty, data)
-        print(f"Controller: 복사된 아이템 등록 - {code} @ {line}-{time}")
+        success = self.model.add_new_item(code, line, time, qty, data)
+    
+        if success:
+            print(f"Controller: 복사된 아이템 모델 등록 완료 - {code} @ {line}-{time}")
+        else:
+            print(f"Controller: 복사된 아이템 모델 등록 실패 - {code} @ {line}-{time}")
 
 
-    """
-    삭제된 아이템 처리 → Model로 전달
-    """
-    def on_item_deleted(self, item_or_id):
-        print("DEBUG: AdjustmentController.on_item_deleted 호출됨")
+    # """
+    # 삭제된 아이템 처리 → Model로 전달
+    # """
+    # def on_item_deleted(self, item_or_id):
+    #     print("DEBUG: AdjustmentController.on_item_deleted 호출됨")
 
-        # item_or_id가 문자열(ID)인 경우
-        if isinstance(item_or_id, str):
-            item_id = item_or_id
-            print(f"DEBUG: ID로 삭제: {item_id}")
-            return self.model.delete_item_by_id(item_id)
+    #     # item_or_id가 문자열(ID)인 경우
+    #     if isinstance(item_or_id, str):
+    #         item_id = item_or_id
+    #         print(f"DEBUG: ID로 삭제: {item_id}")
+    #         return self.model.delete_item_by_id(item_id)
 
-        if hasattr(item_or_id, 'item_data') and item_or_id.item_data:
-            # ID가 있으면 ID 기반으로 삭제
-            item_id = ItemKeyManager.extract_item_id(item_or_id)
-            if item_id:
-                print(f"컨트롤러: 아이템 삭제 처리 - ID: {item_id}")
-                return self.model.delete_item_by_id(item_id)
+    #     if hasattr(item_or_id, 'item_data') and item_or_id.item_data:
+    #         # ID가 있으면 ID 기반으로 삭제
+    #         item_id = ItemKeyManager.extract_item_id(item_or_id)
+    #         if item_id:
+    #             print(f"컨트롤러: 아이템 삭제 처리 - ID: {item_id}")
+    #             return self.model.delete_item_by_id(item_id)
             
-            # # ID가 없으면 Line/Time/Item 기반으로 삭제
-            line, time, item_code = ItemKeyManager.get_item_from_data(item_or_id.item_data)
-            if line is not None and time is not None and item_code is not None:
-                print(f"컨트롤러: 아이템 삭제 처리 - {item_code} @ {line}-{time}")
-                return self.model.delete_item(item_code, line, time)
+    #         # # ID가 없으면 Line/Time/Item 기반으로 삭제
+    #         line, time, item_code = ItemKeyManager.get_item_from_data(item_or_id.item_data)
+    #         if line is not None and time is not None and item_code is not None:
+    #             print(f"컨트롤러: 아이템 삭제 처리 - {item_code} @ {line}-{time}")
+    #             return self.model.delete_item(item_code, line, time)
         
-        return 
+    #     return 
+    
+    """
+    아이템 추가 - UI에 해당 아이템만 추가 (전체 재구성 없음)
+    """
+    def _on_item_added(self, item_data):
+        print(f"Controller: 아이템 추가 - {item_data.get('Item')} @ {item_data.get('Line')}-{item_data.get('Time')}")
+        
+         # UI에 아이템만 추가 (스크롤 위치 유지됨)
+        self._add_item_to_ui(item_data)
+        
+        # 2. 분석 실행
+        self._run_complete_analysis("아이템 이동")
+
+    """
+    아이템 이동 - UI에서 해당 아이템만 이동 (전체 재구성 없음)
+    """
+    def _on_item_moved(self, old_data, new_data):
+        print(f"Controller: 아이템 이동 - {new_data.get('Item')} @ {old_data.get('Line')}-{old_data.get('Time')} -> {new_data.get('Line')}-{new_data.get('Time')}")
+
+        # 스크롤 처리
+        item_id = new_data.get('_id')
+        if item_id:
+            QTimer.singleShot(200, lambda: self._ensure_item_visible(item_id))
+            print(f"셀 이동 후 스크롤 예약됨: ID={item_id}")
+
+        # 2. 분석 실행
+        self._run_complete_analysis("아이템 이동")
+
+    """
+    수량 변경 - UI에서 해당 아이템 텍스트만 업데이트 (전체 재구성 없음)
+    """
+    def _on_quantity_updated(self, item_data):
+        print(f"*** Controller: quantityUpdated 시그널 수신됨! ***")
+        
+        # 1. UI 업데이트
+        self._update_item_ui_immediately(item_data)
+        
+        # 2. 전체 분석 및 차트 업데이트 
+        self._run_complete_analysis("수량 변경")
+
+
+    """
+    아이템 삭제 - UI에서 해당 아이템만 제거 (전체 재구성 없음)
+    """
+    def _on_item_deleted(self, item_id):
+        print(f"Controller: 아이템 삭제 - ID: {item_id}")
+        
+        # 1. UI에서 아이템 제거
+        item_widget = self._find_item_widget_by_id(item_id)
+        if item_widget:
+            container = item_widget.parent()
+            if container:
+                container.remove_item(item_widget)
+        
+        # 2. 완전한 분석 
+        self._run_complete_analysis("아이템 삭제")
+
+    """
+    UI에 아이템만 추가
+    """
+    def _add_item_to_ui(self, item_data):
+        try:
+            line = item_data.get('Line')
+            time = int(item_data.get('Time'))
+            item_code = item_data.get('Item')
+            qty = item_data.get('Qty', 0)
+            
+            # 해당 위치의 컨테이너 찾기
+            row_idx, col_idx = self._find_container_position(line, time)
+            if row_idx >= 0 and col_idx >= 0:
+                # 아이템 텍스트 생성 (공백 4개)
+                item_text = f"{item_code}    {qty}" if qty > 0 else item_code
+                
+                # 해당 컨테이너에 아이템 추가
+                new_item = self.view.grid_widget.addItemAt(row_idx, col_idx, item_text, item_data)
+
+                if new_item:
+                    # 상태 복원 (사전할당, 자재부족 등)
+                    self._restore_item_states(new_item, item_data)
+
+                    # 현재 범례 필터 상태 적용
+                    if hasattr(self.view, 'current_filter_states'):
+                        filter_states = self.view.current_filter_states
+                        new_item.show_shortage_line = filter_states.get('shortage', False)
+                        new_item.show_shipment_line = filter_states.get('shipment', False)
+                        new_item.show_pre_assigned_line = filter_states.get('pre_assigned', False)
+                        new_item.update()
+
+                    print(f"UI에 아이템 추가 완료: {item_code} @ {line}-{time}")
+                else:
+                    print(f"Controller: UI 아이템 추가 실패")
+        except Exception as e:
+            print(f"UI 아이템 추가 중 오류: {e}")
+
+    def _update_item_ui_immediately(self, item_data):
+        """UI만 즉시 업데이트 (분석 없음)"""
+        item_id = item_data.get('_id')
+        if item_id:
+            item_widget = self._find_item_widget_by_id(item_id)
+            if item_widget:
+                item_widget.item_data.update(item_data)
+                item_widget.update_text_from_data()
+                print("✅ UI 텍스트 업데이트 완료")
+
+    def _run_complete_analysis(self, trigger_reason):
+        """완전한 분석 - 모든 것을 한 번에"""
+        print(f"🔄 완전한 분석 시작 - {trigger_reason}")
+        
+        try:
+            # 1. 현재 데이터로 전체 재분석
+            current_df = self.model.get_dataframe()
+            if current_df is None or current_df.empty:
+                return
+            
+            # 2. AnalysisManager로 모든 분석 실행
+            analysis_results = self.analysis_manager.run_all_analyses(current_df)
+            
+            # 3. 모든 결과를 UI에 반영
+            self._apply_all_analysis_results(analysis_results)
+            
+            # 4. 에러 상태 업데이트
+            self.error_manager.update_error_display()
+            
+            print("✅ 완전한 분석 완료")
+            
+        except Exception as e:
+            print(f"❌ 분석 중 오류: {e}")
+
+    def _apply_all_analysis_results(self, analysis_results):
+        """분석 결과를 모든 UI에 적용"""
+        
+        # 1. KPI 업데이트
+        if 'kpi' in analysis_results and self.result_page:
+            kpi_data = analysis_results['kpi']
+            self.result_page.kpi_widget.update_scores(
+                base_scores=kpi_data.get('base_scores', {}),
+                adjust_scores=kpi_data.get('adjust_scores', {})
+            )
+            print("📈 KPI 업데이트")
+        
+        # 2. 차트 데이터 설정
+        if self.result_page:
+            if 'capa_ratio' in analysis_results:
+                self.result_page.capa_ratio_data = analysis_results['capa_ratio']
+            if 'utilization' in analysis_results:
+                self.result_page.utilization_data = analysis_results['utilization']
+            
+            # 3. 모든 차트 업데이트
+            self.result_page.update_all_visualizations()
+            print("📊 모든 차트 업데이트")
+        
+        # 4. 자재부족/출하실패 상태를 아이템에 적용
+        self._apply_status_to_items(analysis_results)
+    
+    def _apply_status_to_items(self, analysis_results):
+        """분석 결과를 개별 아이템에 상태로 적용"""
+        
+        # 자재부족 상태 적용
+        if 'material' in analysis_results and hasattr(self.view, 'set_current_shortage_items'):
+            shortage_results = analysis_results['material'].get('shortage_results', {})
+            self.view.set_current_shortage_items(shortage_results)
+            print("📦 자재부족 상태 적용")
+        
+        # 출하실패 상태 적용
+        if 'shipment' in analysis_results and hasattr(self.view, 'set_shipment_failure_items'):
+            shipment_data = analysis_results['shipment']
+            if shipment_data.get('analyzed'):
+                failure_items = shipment_data.get('failure_items', {})
+                self.view.set_shipment_failure_items(failure_items)
+                print("🚢 출하실패 상태 적용")
+
+    """
+    전체 데이터 변경 - 전체 UI 재구성 필요 (리셋, 새 파일 로드 등)
+    """
+    def _on_full_data_change(self):
+        print("Controller: 전체 데이터 변경 - UI 전체 재구성")
+        
+        df = self.model.get_dataframe()
+        analysis_results = self._run_all_analyses(df)
+        
+        # 전체 UI 업데이트
+        self.view.update_ui_only(df, analysis_results)
+        if self.result_page:
+            self.result_page.update_ui_only(df, analysis_results)
+        
+        self.error_manager.update_error_display()
 
     """
     아이템 ID를 기반으로 해당 아이템으로 스크롤
@@ -481,6 +446,105 @@ class AdjustmentController(QObject):
         # 뷰의 _scroll_to_selected_item 메서드 호출
         if hasattr(self.view, '_scroll_to_selected_item'):
             self.view._scroll_to_selected_item(item_id)
+            print(f"아이템으로 스크롤 요청: ID={item_id}")
+
+    def _find_container_position(self, line, time):
+        """라인과 시간으로 컨테이너 위치 찾기"""
+        try:
+            # 교대 계산
+            shift = "Day" if int(time) % 2 == 1 else "Night"
+            row_key = f"{line}_({shift})"
+            
+            # 행 인덱스 찾기
+            row_idx = -1
+            if hasattr(self.view.grid_widget, 'row_headers'):
+                try:
+                    row_idx = self.view.grid_widget.row_headers.index(row_key)
+                except ValueError:
+                    pass
+            
+            # 열 인덱스 계산 (요일)
+            col_idx = (int(time) - 1) // 2
+            
+            return row_idx, col_idx
+        except:
+            return -1, -1
+        
+    """
+    ID로 아이템 위젯 찾기
+    """
+    def _find_item_widget_by_id(self, item_id):
+        try:
+            if not hasattr(self.view.grid_widget, 'containers'):
+                return None
+                
+            for row_containers in self.view.grid_widget.containers:
+                for container in row_containers:
+                    for item in container.items:
+                        if (hasattr(item, 'item_data') and 
+                            item.item_data and 
+                            item.item_data.get('_id') == item_id):
+                            return item
+        except:
+            pass
+        return None
+    
+    """
+    아이템 상태 복원 (사전할당, 자재부족 등)
+    """
+    def _restore_item_states(self, item_widget, item_data):
+        # ResultPage의 상태 복원 로직 재사용
+        if self.result_page:
+            item_code = item_data.get('Item', '')
+            
+            # 사전할당 상태
+            if hasattr(self.result_page, 'pre_assigned_items') and item_code in self.result_page.pre_assigned_items:
+                item_widget.set_pre_assigned_status(True)
+                
+            # 자재부족 상태  
+            if (hasattr(self.result_page, 'material_analyzer') and 
+                self.result_page.material_analyzer and
+                hasattr(self.result_page.material_analyzer, 'shortage_results')):
+                shortage_results = self.result_page.material_analyzer.shortage_results
+                if item_code in shortage_results:
+                    item_widget.set_shortage_status(True, shortage_results[item_code])
+
+    """
+    추가된 아이템의 분석 상태 업데이트 (자재부족, 사전할당 등)
+    """
+    def _update_item_analysis_status(self, item_data):
+        try:
+            item_id = item_data.get('_id')
+            item_widget = self._find_item_widget_by_id(item_id) if item_id else None
+            
+            if item_widget and self.result_page:
+                item_code = item_data.get('Item', '')
+                
+                # 자재 부족 상태 확인 및 적용
+                if (hasattr(self.result_page, 'material_analyzer') and 
+                    self.result_page.material_analyzer and
+                    hasattr(self.result_page.material_analyzer, 'shortage_results')):
+                    
+                    shortage_results = self.result_page.material_analyzer.shortage_results
+                    if item_code in shortage_results:
+                        # 시프트별 부족 정보 확인
+                        item_time = item_data.get('Time')
+                        matching_shortages = []
+                        
+                        for shortage in shortage_results[item_code]:
+                            shortage_shift = shortage.get('shift')
+                            if shortage_shift and item_time and int(shortage_shift) == int(item_time):
+                                matching_shortages.append(shortage)
+                        
+                        if matching_shortages:
+                            item_widget.set_shortage_status(True, matching_shortages)
+                
+                # 사전할당 상태 확인 및 적용
+                if hasattr(self.result_page, 'pre_assigned_items') and item_code in self.result_page.pre_assigned_items:
+                    item_widget.set_pre_assigned_status(True)
+                    
+        except Exception as e:
+            print(f"아이템 분석 상태 업데이트 중 오류: {e}")
 
     """
     모델 데이터의 변경 상태에 따라 리셋 버튼 상태 업데이트

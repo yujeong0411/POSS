@@ -21,10 +21,11 @@ class SummaryTab(QWidget):
         if hasattr(self.parent_page, 'summary_widget'):
             self.parent_page.summary_widget = self.summary_widget
     
-    def update_content(self, data):
-        """콘텐츠 업데이트"""
-        if self.summary_widget and data is not None:
-            self.summary_widget.run_analysis(data)
+    # def update_content(self, data):
+    #     """콘텐츠 업데이트"""
+    #     # 🔧 기존 결과만 표시
+    #     if self.summary_widget:
+    #         self.summary_widget.refresh_display()
     
     def get_widget(self):
         """위젯 반환 (호환성 유지)"""

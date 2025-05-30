@@ -62,16 +62,12 @@ class DataManager(QObject):
         
     def _trigger_analysis(self):
         if hasattr(self.left_section, 'parent_page') and self.left_section.parent_page:
-            if hasattr(self.left_section.parent_page, 'analyze_shipment_with_current_data'):
-                current_data = self.left_section.extract_dataframe()
-                # 1. 출하 분석 요청
-                if current_data is not None and not current_data.empty:
-                    print("DataManager: 출하 분석 실행")
-                    self.left_section.parent_page.analyze_shipment_with_current_data(current_data)
-                # 2. 분산 배치 분석 요청 - SplitView 업데이트
-                if hasattr(self.left_section.parent_page, 'update_split_view_analysis'):
-                    print("DataManager: 분산 배치 분석 실행")
-                    self.left_section.parent_page.update_split_view_analysis(current_data)
+            current_data = self.left_section.extract_dataframe()
+        
+            # 분산 배치 분석 요청 - SplitView 업데이트
+            if hasattr(self.left_section.parent_page, 'update_split_view_analysis'):
+                print("DataManager: 분산 배치 분석 실행")
+                self.left_section.parent_page.update_split_view_analysis(current_data)
 
     """
     Legacy 모드 테이블 업데이트
@@ -103,11 +99,7 @@ class DataManager(QObject):
         if not result_page:
             return
             
-        try:
-            # 탭 위젯들 초기화 요청
-            if hasattr(result_page, 'preload_tab_analyses'):
-                result_page.preload_tab_analyses(self.left_section.data)
-                
+        try:    
             # 범례에도 필터 상태 업데이트 알림
             if hasattr(self.left_section, 'legend_widget'):
                 # 현재 필터 상태 가져오기

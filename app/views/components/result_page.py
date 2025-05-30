@@ -7,7 +7,6 @@ import pandas as pd
 import os
 
 from app.models.common.file_store import DataStore, FilePaths
-from app.analysis.output.material_shortage_analysis import MaterialShortageAnalyzer
 from ..components.visualization.visualization_updater import VisualizationUpdater
 from app.analysis.output.daily_capa_utilization import CapaUtilization
 from app.analysis.output.capa_ratio import CapaRatioAnalyzer
@@ -346,12 +345,42 @@ class ResultPage(QWidget):
         
         self.result_data = df
         
-        # 분석 결과로 위젯 업데이트 (재분석 없음)
-        self._update_widgets_with_analysis_results(analysis_results)
+        # 각 위젯에 결과만 적용
+        self._apply_kpi_results(analysis_results.get('kpi', {}))
+        self._apply_material_results(analysis_results.get('material', {}))
+        self._apply_shipment_results(analysis_results.get('shipment', {}))
+        self._apply_visualization_results(analysis_results)
         
-        # 상태 업데이트
-        self._update_item_status()
+        print("ResultPage: 결과 적용 완료")
 
+    def _apply_material_results(self, material_results):
+        """자재 결과 적용 - 분석 없음"""
+        if 'analyzer' in material_results:
+            self.material_analyzer = material_results['analyzer']
+            
+            # Left Section에 결과만 전달
+            if hasattr(self, 'left_section'):
+                shortage_results = material_results.get('shortage_results', {})
+                self.left_section.apply_shortage_status(shortage_results)
+    
+    def _apply_shipment_results(self, shipment_results):
+        """출하 결과 적용 - 분석 없음"""
+        if not shipment_results.get('analyzed'):
+            return
+            
+        failure_items = shipment_results.get('failure_items', {})
+            
+        # 상태 변화 확인
+        current_failures = getattr(self, '_last_shipment_failures', {})
+        if current_failures != failure_items:
+            print(f"출하 상태 업데이트: {len(failure_items)}개 실패 아이템")
+            
+            # Left Section에 전달
+            if hasattr(self, 'left_section'):
+                self.left_section.set_shipment_failure_items(failure_items)
+            
+            # 상태 저장
+            self._last_shipment_failures = failure_items
 
 
     def _update_widgets_with_analysis_results(self, analysis_results):
@@ -376,23 +405,22 @@ class ResultPage(QWidget):
                 material_data = analysis_results['material']
                 if 'analyzer' in material_data and material_data['analyzer']:
                     self.material_analyzer = material_data['analyzer']
+
                     # 자재 부족 상태를 Left Section에 전달
                     if hasattr(self, 'left_section'):
                         self.left_section.set_current_shortage_items(
                             material_data.get('shortage_results', {})
                         )
+
+            # 3.  출하 결과 업데이트
+            if 'shipment' in analysis_results:
+                self._apply_shipment_results(analysis_results['shipment'])
             
-            # 3. 계획 유지율 위젯 업데이트
-            if 'plan_maintenance' in analysis_results and self.plan_maintenance_widget:
-                pm_data = analysis_results['plan_maintenance']
-                if 'data' in pm_data:
-                    self.plan_maintenance_widget.set_data(
-                        pm_data['data'],
-                        pm_data.get('start_date'),
-                        pm_data.get('end_date')
-                    )
+           # 4. 계획 유지율 위젯 업데이트
+            if 'plan_maintenance' in analysis_results:
+                self._apply_plan_maintenance_results(analysis_results['plan_maintenance'])
             
-            # 4. 시각화 데이터 설정
+            # 5. 시각화 데이터 설정
             if 'capa_ratio' in analysis_results:
                 self.capa_ratio_data = analysis_results['capa_ratio']
             
@@ -406,6 +434,23 @@ class ResultPage(QWidget):
             print(f"ResultPage: 위젯 업데이트 중 오류: {e}")
             import traceback
             traceback.print_exc()
+    
+    def preload_tab_analyses(self, data):
+        """🔧 출하 분석 호출 부분만 제거"""
+        if data is None or data.empty:
+            return
+            
+        try:
+            # 현재 데이터 저장
+            self.result_data = data
+                
+            # 자재 부족 분석은 유지
+            if hasattr(self, 'material_widget') and self.material_widget:
+                self.material_widget.run_analysis(data)
+                self.material_analyzer = self.material_widget.get_material_analyzer()
+                
+        except Exception as e:
+            print(f"사전 분석 실행 중 오류: {e}")
 
     """
     MVC 모드 전용 - 모델로부터 UI 업데이트
@@ -433,63 +478,6 @@ class ResultPage(QWidget):
         print("ResultPage: Legacy 모드 - on_data_changed 실행")
         self._update_all_components(data)
 
-    """
-    실제 업데이트 로직 - MVC/Legacy 공통 사용
-    """
-    def _update_all_components(self, data): 
-        print("ResultPage: 컴포넌트 업데이트 시작")
-        self.result_data = data
-
-        # 위젯 참조가 없으면 다시 설정
-        if self.plan_maintenance_widget is None:
-            self._setup_widget_references()
-
-        # 자재 부족 분석
-        if data is not None and not data.empty:
-            print("데이터 로드 후 자재 부족 분석 시행")
-            if hasattr(self, 'material_widget') and self.material_widget:
-                self.material_widget.run_analysis(data)
-                self.material_analyzer = self.material_widget.get_material_analyzer()
-            else:
-                try:
-                    if not hasattr(self, 'material_analyzer') or self.material_analyzer is None:
-                        self.material_analyzer = MaterialShortageAnalyzer()
-                    self.material_analyzer.analyze_material_shortage(data)
-                except Exception as e:
-                    print(f"초기 자재 부족 분석 중 오류 :{e}")
-
-        # 상태 업데이트
-        if self.pre_assigned_items:
-            self.update_left_widget_pre_assigned_status(self.pre_assigned_items)
-        if self.material_analyzer and self.material_analyzer.shortage_results:
-            self.update_left_widget_shortage_status(self.material_analyzer.shortage_results)
-        if hasattr(self.left_section, 'shipment_failure_items') and self.left_section.shipment_failure_items:
-            self.left_section.apply_shipment_failure_status()
-
-        try:
-            if data is not None and not data.empty:
-                # kpi 업데이트
-                self.update_kpi_scores() 
-                self._refresh_base_kpi()  # 조정여부 확인
-
-                # 각종 위젯 업데이트
-                self._update_plan_maintenance(data)
-                self._update_split_allocation(data)
-                self._update_summary(data)
-
-                # 시각화 데이터 준비 및 업데이트
-                self._prepare_visualization_data(data)
-                self.update_all_visualizations()
-            else:
-                print("빈 데이터프레임")
-                self.capa_ratio_data = {}
-                self.utilization_data = {}
-
-        except Exception as e:
-            print(f"데이터 분석 중 오류 발생: {e}")
-            import traceback
-            traceback.print_exc()
-    
     """
     계획 유지율 업데이트
     """
@@ -566,28 +554,9 @@ class ResultPage(QWidget):
         # 위치 변경에 의한 호출인지 확인
         if hasattr(item, '_is_position_change'):
             return
+
+        print("ResultPage: Legacy 모드 아이템 변경 처리 완료 (계획 유지율은 전체 분석에서 처리)")
         
-        # 수량 변경이 있는 경우 계획 유지율 위젯 업데이트
-        if 'Qty' in new_data and pd.notna(new_data['Qty']):
-            line = new_data.get('Line')
-            time = new_data.get('Time')
-            item_code = new_data.get('Item')
-            new_qty = new_data.get('Qty')
-
-            # 값 변환 및 검증
-            try:
-                time = int(time) if time is not None else None
-                new_qty = int(float(new_qty)) if new_qty is not None else None
-            except (ValueError, TypeError):
-                print(f"시간 또는 수량 변환 오류: time={time}, qty={new_qty}")
-                return
-
-            if all([line, time is not None, item_code, new_qty is not None]):
-                # 계획 유지율 위젯 업데이트
-                if hasattr(self, 'plan_maintenance_widget'):
-                    print(f"계획 유지율 위젯 수량 업데이트: {line}, {time}, {item_code}, {new_qty}")
-                    self.plan_maintenance_widget.update_quantity(line, time, item_code, new_qty)
-
     """
     최적화 결과 설정 - MVC 구조 초기화
     """
@@ -947,52 +916,6 @@ class ResultPage(QWidget):
 
         elif viz_type == "PortCapa":
             pass
-
-    """현재 데이터를 사용하여 출하 분석 실행"""
-    def analyze_shipment_with_current_data(self, current_data):
-        if current_data is None or current_data.empty:
-            print("출하 분석 불가: 데이터가 비어 있습니다.")
-            return
-            
-        # Shipment 위젯 참조 확인
-        if not hasattr(self, 'shipment_widget') or not self.shipment_widget:
-            # 탭 매니저를 통해 Shipment 위젯 참조 가져오기
-            if hasattr(self, 'tab_manager'):
-                shipment_tab = self.tab_manager.get_tab_instance('Shipment')
-                if shipment_tab and hasattr(shipment_tab, 'shipment_widget'):
-                    self.shipment_widget = shipment_tab.shipment_widget
-        
-        # Shipment 위젯으로 분석 실행
-        if hasattr(self, 'shipment_widget') and self.shipment_widget:
-            print("왼쪽 결과 테이블 데이터로 출하 분석 실행")
-            self.shipment_widget.run_analysis(current_data)
-        else:
-            print("출하 분석 불가: Shipment 위젯을 찾을 수 없습니다.")
-
-    """탭 분석 데이터 사전 로드"""
-    def preload_tab_analyses(self, data):
-        if data is None or data.empty:
-            return
-            
-        try:
-            # 현재 데이터 저장
-            self.result_data = data
-            
-            # 출하 분석 미리 실행 (백그라운드)
-            if hasattr(self, 'shipment_widget') and self.shipment_widget:
-                print("데이터 로드 후 출하 분석 자동 실행")
-                self.shipment_widget.run_analysis(data)
-                
-            # 자재 부족 분석 미리 실행
-            if hasattr(self, 'material_widget') and self.material_widget:
-                self.material_widget.run_analysis(data)
-                self.material_analyzer = self.material_widget.get_material_analyzer()
-                
-            # 기타 필요한 분석 초기화...
-            
-        except Exception as e:
-            print(f"사전 분석 실행 중 오류: {e}")
-
 
     """
     출하 상태가 업데이트될 때 호출되는 함수
@@ -1515,3 +1438,20 @@ class ResultPage(QWidget):
             if split_widget and hasattr(split_widget, 'run_analysis'):
                 # 분석 실행
                 split_widget.run_analysis(data)
+
+    def _apply_plan_maintenance_results(self, plan_results):
+        """🔧 새로 추가: 계획 유지율 결과 적용"""
+        if not self.plan_maintenance_widget:
+            print("계획 유지율: 위젯이 없음")
+            return
+        
+        try:
+            # 🔧 단순화: 분석 결과를 그대로 위젯에 전달
+            self.plan_maintenance_widget.apply_analysis_results(plan_results)
+            
+            print("계획 유지율: UI 업데이트 완료")
+            
+        except Exception as e:
+            print(f"계획 유지율 결과 적용 중 오류: {e}")
+            import traceback
+            traceback.print_exc()

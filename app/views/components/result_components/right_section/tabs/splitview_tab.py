@@ -24,10 +24,11 @@ class SplitViewTab(QWidget):
         if hasattr(self.parent_page, 'split_allocation_widget'):
             self.parent_page.split_allocation_widget = self.split_allocation_widget
     
-    def update_content(self, data=None):
-        """콘텐츠 업데이트"""
-        if self.split_allocation_widget and data is not None:
-            self.split_allocation_widget.run_analysis(data)
+    # def update_content(self, data=None):
+    #     """콘텐츠 업데이트"""
+    #     # 🔧 기존 결과만 표시
+    #     if self.split_allocation_widget:
+    #         self.split_allocation_widget.refresh_display()
     
     def get_widget(self):
         """위젯 반환"""

@@ -1,13 +1,11 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QSpacerItem, QSizePolicy
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QTimer
-from PyQt5.QtGui import QPainter, QColor, QPen, QFont
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint
+from PyQt5.QtGui import QPainter, QColor, QPen
 from .draggable_item_label import DraggableItemLabel
 from .item_edit_dialog import ItemEditDialog
 import json
-from app.views.components.common.enhanced_message_box import EnhancedMessageBox
-from .item_position_manager import ItemPositionManager
+import uuid
 from app.utils.item_key_manager import ItemKeyManager
-from app.resources.fonts.font_manager import font_manager
 from app.models.common.screen_manager import *
 
 """
@@ -118,6 +116,7 @@ class ItemsContainer(QWidget):
     아이템이 더블클릭되었을 때 처리
     """
     def on_item_double_clicked(self, item):
+        print(f"DEBUG: on_item_double_clicked 호출됨")
         if not item or not hasattr(item, 'item_data'):
             return
 
@@ -135,6 +134,8 @@ class ItemsContainer(QWidget):
     아이템 데이터 업데이트
     """
     def update_item_data(self, item, new_data, changed_fields=None):
+        print(f"DEBUG: update_item_data 호출됨 - 아이템: {item}, 변경필드: {changed_fields}")
+
         if item and item in self.items and new_data:
             # 데이터 변경 시그널 발생
             self.itemDataChanged.emit(item, new_data, changed_fields)
@@ -148,7 +149,6 @@ class ItemsContainer(QWidget):
     """
     모든 아이템 선택 해제
     """
-
     def clear_selection(self):
         """모든 아이템 선택 해제"""
         selection_changed = False
@@ -296,8 +296,6 @@ class ItemsContainer(QWidget):
 
         return len(self.items)  # 모든 아이템보다 아래에 드롭되면 마지막에 삽입
 
-    from PyQt5.QtCore import Qt, QMimeData, pyqtSignal, QTimer  # QTimer import 추가
-
     # items_container.py의 dropEvent 메서드 수정
     def dropEvent(self, event):
         if event.mimeData().hasText():
@@ -322,7 +320,7 @@ class ItemsContainer(QWidget):
             source = event.source()
             is_ctrl_pressed = event.keyboardModifiers() & Qt.ControlModifier
 
-            # *** 핵심: 드롭 인디케이터 즉시 숨기기 ***
+            # 드롭 인디케이터 숨기기 
             self.show_drop_indicator = False
             self.update()
 
@@ -335,13 +333,13 @@ class ItemsContainer(QWidget):
                     'shortage_data': getattr(source, 'shortage_data', None),
                     'is_pre_assigned': getattr(source, 'is_pre_assigned', False),
                     'is_shipment_failure': getattr(source, 'is_shipment_failure', False),
-                    'shipment_failure_reason': getattr(source, 'shipment_failure_reason', None)
+                    'shipment_failure_reason': getattr(source, 'shipment_failure_reason', None),
                 }
-                # *** 선택 상태 백업 ***
+                # 선택 상태 백업 
                 was_selected = getattr(source, 'is_selected', False)
 
             if is_ctrl_pressed and isinstance(source, DraggableItemLabel):
-                # *** Ctrl+드래그 복사 처리 ***
+                # Ctrl+드래그 복사 처리
                 source_container = source.parent()
 
                 if item_data is None and hasattr(source, 'item_data') and source.item_data:
@@ -350,6 +348,8 @@ class ItemsContainer(QWidget):
                 if item_data:
                     item_data['Qty'] = 0
                     item_data['_is_copy'] = True
+                    # 새로운 ID 생성 (기존 ID 덮어쓰기)
+                    item_data['_id'] = str(uuid.uuid4())
                     item_data.pop('_drop_pos_x', None)
                     item_data.pop('_drop_pos_y', None)
 
@@ -372,31 +372,49 @@ class ItemsContainer(QWidget):
                             new_time = (day_idx * 2) + (1 if is_day_shift else 2)
                             item_data['Time'] = str(new_time)
 
-                # *** 복사본은 항상 맨 마지막에 추가 ***
-                new_item = self.addItem(item_data.get('Item', ''), -1, item_data)
+               # MVC 모드에서는 Controller가 처리하도록 변경
+                controller = self._find_controller()
+                if controller:
+                    print("복사: Controller가 처리")
+                    # Controller를 통해 복사 처리 (UI 생성은 Controller에서 담당)
+                    controller.on_item_copied(None, item_data)
+                    event.acceptProposedAction()
+                    return
+                else:
+                    # Legacy 모드: 기존 방식으로 UI에 직접 추가
+                    print("복사: Legacy 모드 - 직접 UI 추가")
+                    new_item = self.addItem(item_data.get('Item', ''), -1, item_data)
 
-                if new_item:
-                    # 상태 복원
-                    if source_states['is_shortage']:
-                        new_item.set_shortage_status(True, source_states['shortage_data'])
-                    if source_states['is_pre_assigned']:
-                        new_item.set_pre_assigned_status(True)
-                    if source_states['is_shipment_failure']:
-                        new_item.set_shipment_failure(True, source_states['shipment_failure_reason'])
+                    if new_item:
+                        # 3. 현재 범례 필터 상태에 따른 상태선 설정
+                        parent_left_section = self._find_parent_left_section()
+                        if parent_left_section and hasattr(parent_left_section, 'current_filter_states'):
+                            filter_states = parent_left_section.current_filter_states
+                            
+                            # 핵심: 현재 사용자 설정에 따른 상태선 표시 
+                            new_item.show_shortage_line = filter_states.get('shortage', False)
+                            new_item.show_shipment_line = filter_states.get('shipment', False)
+                            new_item.show_pre_assigned_line = filter_states.get('pre_assigned', False)
+                            
+                            print(f"[DEBUG] 현재 필터 상태 적용: shortage={new_item.show_shortage_line}, shipment={new_item.show_shipment_line}, pre_assigned={new_item.show_pre_assigned_line}")
 
-                    # *** 복사본은 선택하지 않음 ***
-                    new_item.set_selected(False)
-                    new_item.update_text_from_data()
+                        # 상태 복원
+                        if source_states['is_shortage']:
+                            new_item.set_shortage_status(True, source_states['shortage_data'])
+                        if source_states['is_pre_assigned']:
+                            new_item.set_pre_assigned_status(True)
+                        if source_states['is_shipment_failure']:
+                            new_item.set_shipment_failure(True, source_states['shipment_failure_reason'])
 
-                # 복사 시그널 발생
-                self.itemCopied.emit(new_item, item_data)
+                        # 복사본은 선택하지 않음
+                        new_item.set_selected(False)
+                        new_item.update_text_from_data()
 
-                event.acceptProposedAction()
+                    # 복사 시그널 발생
+                    self.itemCopied.emit(new_item, item_data)
 
-                # 변경 시그널은 단순하게 한 번만
-                item_id = ItemKeyManager.extract_item_id(new_item) if new_item else item_data.get('_id')
-                self.itemsChanged.emit(item_id)
-                return
+                    event.acceptProposedAction()
+                    return
 
             # *** 일반 드래그 처리 ***
             if isinstance(source, DraggableItemLabel):
@@ -472,15 +490,23 @@ class ItemsContainer(QWidget):
                             except Exception:
                                 pass
 
-                    # *** 핵심 수정: 다른 컨테이너에서 이동할 때 항상 맨 마지막에 추가 ***
+                    # 다른 컨테이너에서 이동할 때 항상 맨 마지막에 추가 
                     print(f"DEBUG: 다른 컨테이너에서 이동 - 현재 아이템 수: {len(self.items)}")
                     new_item = self.addItem(item_text, -1, item_data)  # -1로 맨 마지막에 추가
                     print(f"DEBUG: 아이템 추가 후 - 총 아이템 수: {len(self.items)}")
 
                     if new_item:
-                        # 아이템이 정말 마지막에 있는지 확인
-                        actual_index = self.items.index(new_item) if new_item in self.items else -1
-                        print(f"DEBUG: 새 아이템이 인덱스 {actual_index}에 추가됨")
+                        # 일반 이동에서도 필터 상태 적용 
+                        parent_left_section = self._find_parent_left_section()
+                        if parent_left_section and hasattr(parent_left_section, 'current_filter_states'):
+                            filter_states = parent_left_section.current_filter_states
+                            
+                            # 현재 사용자 설정에 따른 상태선 표시
+                            new_item.show_shortage_line = filter_states.get('shortage', False)
+                            new_item.show_shipment_line = filter_states.get('shipment', False)
+                            new_item.show_pre_assigned_line = filter_states.get('pre_assigned', False)
+                            
+                            print(f"[DEBUG] 일반 이동 시 필터 상태 적용: shortage={new_item.show_shortage_line}, shipment={new_item.show_shipment_line}, pre_assigned={new_item.show_pre_assigned_line}")
 
                         # 상태 복원
                         if source_states['is_shortage']:
@@ -491,6 +517,7 @@ class ItemsContainer(QWidget):
                             new_item.set_shipment_failure(True, source_states['shipment_failure_reason'])
 
                         new_item.update_text_from_data()
+                        # new_item.update()
 
                         # *** 핵심 수정: 드래그앤드롭 시 자동 선택하지 않음 ***
                         # 기존 선택 상태가 있었던 경우에만 선택
@@ -521,18 +548,26 @@ class ItemsContainer(QWidget):
                                     'to': item_data.get('Time', '')
                                 }
 
-                        # 시그널 발생
-                        self.itemDataChanged.emit(new_item, item_data, changed_fields)
+                        controller = self._find_controller()
+                        if controller:
+                            # Model 업데이트만 수행 (UI는 이미 완료됨)
+                            old_line = source.item_data.get('Line') if hasattr(source, 'item_data') else None
+                            old_time = source.item_data.get('Time') if hasattr(source, 'item_data') else None
+                            new_line = item_data.get('Line')
+                            new_time = item_data.get('Time')
+                            item_code = item_data.get('Item')
+                            item_id = item_data.get('_id')
+                            
+                            if old_line and old_time is not None and new_line and new_time is not None:
+                                print(f"드래그앤드롭: 직접 Model 업데이트 - {item_code}")
+                                controller.model.move_item(item_code, old_line, old_time, new_line, new_time, item_id)
 
-                    # 원본 삭제
-                    source_container.remove_item(source)
-            else:
-                # 새 아이템 생성 (외부에서 드래그된 경우)
-                new_item = self.addItem(item_text, -1, item_data)  # 맨 마지막에 추가
-                if new_item and hasattr(new_item, 'update_text_from_data'):
-                    new_item.update_text_from_data()
-                    # *** 새로 생성된 아이템도 선택하지 않음 ***
-                    new_item.set_selected(False)
+                    # 🔧 원본 삭제는 시그널 없이 수행
+                    if source_container and hasattr(source_container, '_remove_item_without_signal'):
+                        source_container._remove_item_without_signal(source)
+                    else:
+                        # 폴백: 기존 방식
+                        source_container.remove_item(source)
 
             event.acceptProposedAction()
 
@@ -544,7 +579,38 @@ class ItemsContainer(QWidget):
                 item_id = item_data.get('_id')
 
             self.itemsChanged.emit(item_id)
+    
+    def _find_parent_left_section(self):
+        """부모 위젯 체인에서 ModifiedLeftSection 찾기"""
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'current_filter_states'):  # ModifiedLeftSection의 특징
+                return parent
+            parent = parent.parent()
+        return None
+            
+    def _find_controller(self):
+        """부모 위젯 체인에서 Controller 찾기"""
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'controller') and parent.controller:
+                return parent.controller
+            parent = parent.parent()
+        return None
 
+    def _remove_item_without_signal(self, item):
+        """시그널 없이 아이템 제거 (드래그앤드롭 전용)"""
+        if item in self.items:
+            # 선택 상태 해제
+            if item == self.selected_item:
+                self.selected_item = None
+
+            # UI에서만 제거 (시그널 발생 안함)
+            self.layout.removeWidget(item)
+            self.items.remove(item)
+            item.deleteLater()
+            
+            print(f"아이템 무음 제거 완료")
 
     """
     시프트별 자재 부족 상태 업데이트

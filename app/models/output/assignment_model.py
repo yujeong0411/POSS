@@ -13,6 +13,13 @@ from app.utils.field_filter import filter_internal_fields
     - dataModified: 데이터 변경 여부 전달
 """
 class AssignmentModel(QObject):
+    # 세분화된 시그널들
+    itemAdded = pyqtSignal(dict)          # 아이템 추가 (복사 등)
+    itemMoved = pyqtSignal(dict, dict)    # 아이템 이동 (old_data, new_data)
+    itemDeleted = pyqtSignal(str)         # 아이템 삭제 (item_id)
+    quantityUpdated = pyqtSignal(dict)    # 수량 변경 (item_data)
+
+    # 기존 시그널들 (대량 변경 시에만 사용)
     modelDataChanged = pyqtSignal()  # 모델의 데이터가 바뀌었음을 뷰(View)에 알리는 시그널
     validationFailed = pyqtSignal(dict, str)  # 검증(validation) 오류가 발생했을 때 오류 메시지를 전달하는 시그널
     dataModified = pyqtSignal(bool)  # True: 변경됨, False: 원본과 동일
@@ -71,12 +78,6 @@ class AssignmentModel(QObject):
 
     """
     수량 변경 업데이트
-    1) 해당 아이템의 Qty 컬럼을 new_qty로 변경
-    ...
-
-
-    2) 검증(validate) → 문제가 있으면 validationFailed 방출
-    3) 변경 완료 후 modelDataChanged 방출
     """
     def update_qty(self, item: str, line: str, time: int, new_qty: int, item_id: str = None):
         # 1) 라인, 시간, 아이템으로 정확한 행 찾기
@@ -103,21 +104,20 @@ class AssignmentModel(QObject):
         # 3) 수정된 아이템에 대해 검증 수행
         error_msg = self._validate_item(item, line, time, item_id)
         row = self._df.loc[mask].iloc[0].to_dict()  # 현재 행 전체 정보
-        self.validationFailed.emit(row, error_msg)  
+        self.validationFailed.emit(row, error_msg)
 
         # 원본과 현재 데이터 비교하여 변경 여부 확인
         has_changes = self._check_for_changes()
         self.dataModified.emit(has_changes)
         
         # 4) 모든 처리 후 뷰에 데이터 변경 알림
-        self.modelDataChanged.emit()
+        self.quantityUpdated.emit(row)
 
         return True
 
     """
     아이템을 new_line, new_shift로 이동
     """
-
     def move_item(self, item, old_line, old_time, new_line, new_time, item_id=None):
         # 변경사항이 없으면 조기 종료 (기존 코드 유지)
         if str(old_line) == str(new_line) and int(old_time) == int(new_time):
@@ -132,6 +132,9 @@ class AssignmentModel(QObject):
         if not mask.any():
             print(f"Model: 해당 아이템을 찾을 수 없습니다.")
             return
+        
+        # 이동 전 데이터 백업
+        old_data = self._df.loc[mask].iloc[0].to_dict()
 
         # Line/Time 컬럼 업데이트
         self._df.loc[mask, 'Line'] = str(new_line)
@@ -139,6 +142,7 @@ class AssignmentModel(QObject):
 
         # 검증과 시그널을 한 번에 처리
         error_msg = self._validate_item(item, new_line, new_time, item_id)
+        new_data = self._df.loc[mask].iloc[0].to_dict()
         row = self._df.loc[mask].iloc[0].to_dict()
 
         # 변경 여부 확인
@@ -147,7 +151,8 @@ class AssignmentModel(QObject):
         # 시그널을 한 번에 발생 (중복 방지)
         self.validationFailed.emit(row, error_msg)
         self.dataModified.emit(has_changes)
-        self.modelDataChanged.emit()  # 마지막에 한 번만
+        # self.modelDataChanged.emit()  # 마지막에 한 번만
+        self.itemMoved.emit(old_data, new_data)
         
 
     """
@@ -251,17 +256,29 @@ class AssignmentModel(QObject):
             mask = ItemKeyManager.create_mask_for_item(self._df, line, time, item)
             if mask.any():
                 self._df.loc[mask, 'Qty'] = qty
+
+                #기존 아이템 업데이트 시에도 검증 필요
+                error_msg = self._validate_item(item, line, time, new_row['_id'])
+                updated_row = self._df.loc[mask].iloc[0].to_dict()
+                self.validationFailed.emit(updated_row, error_msg)
+                
+                # 수량 업데이트 시그널
+                self.quantityUpdated.emit(updated_row)
                 return True
         
         # 새 행을 DataFrame에 추가
         self._df = pd.concat([self._df, pd.DataFrame([new_row])], ignore_index=True)
 
+        # 새 아이템 추가 시에도 검증 필요 (복사 시 CAPA 초과 등 확인)
+        error_msg = self._validate_item(item, line, time, new_row['_id'])
+        self.validationFailed.emit(new_row, error_msg)
+
         # 원본과 현재 데이터 비교하여 변경 여부 확인
         has_changes = self._check_for_changes()
         self.dataModified.emit(has_changes)
-        
-        # 뷰에 데이터 변경 알림
-        self.modelDataChanged.emit()
+
+        # 아이템 추가 시그널만 발생 (전체 재구성 없음)
+        self.itemAdded.emit(new_row)
 
         return True
 
@@ -287,9 +304,9 @@ class AssignmentModel(QObject):
         # 원본과 현재 데이터 비교하여 변경 여부 확인
         has_changes = self._check_for_changes()
         self.dataModified.emit(has_changes)
-        
-        # 뷰에 데이터 변경 알림
-        self.modelDataChanged.emit()
+
+        # 아이템 삭제 시그널만 발생 (전체 재구성 없음)
+        self.itemDeleted.emit(item_id)
         
         return True
     

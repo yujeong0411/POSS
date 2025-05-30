@@ -358,9 +358,6 @@ class RMCMaintenanceTable(MaintenanceTableWidget):
         # modified_rmc_keys가 None이면 빈 집합으로 초기화
         if modified_rmc_keys is None:
             modified_rmc_keys = set()
-        
-        print(f"RMC 테이블 populate_data - 수정된 RMC 키: {modified_rmc_keys}")
-    
             
         df_data = df[df['Line'] != 'Total']  # Total 행만 필터링
         

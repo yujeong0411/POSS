@@ -29,13 +29,6 @@ class PortCapaTab(QWidget):
         if hasattr(self.parent_page, 'portcapa_widget'):
             self.parent_page.portcapa_widget = self.portcapa_widget
     
-    # """
-    # 콘텐츠 업데이트
-    # """
-    # def update_content(self, data=None):
-    #     if self.portcapa_widget:
-    #         self.portcapa_widget.render_table()
-    
     """
     위젯 반환
     """

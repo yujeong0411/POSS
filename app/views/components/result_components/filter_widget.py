@@ -387,38 +387,27 @@ class FilterWidget(QWidget):
         """
         필터 데이터 설정 - 데이터프레임도 함께 받아서 생산량 기준 정렬에 활용
         """
-        # print(f"DEBUG: FilterWidget.set_filter_data 호출")
-        # print(f"DEBUG: lines 파라미터: {lines[:5] if lines else None}... (총 {len(lines) if lines else 0}개)")
-        # print(f"DEBUG: projects 파라미터: {projects[:5] if projects else None}... (총 {len(projects) if projects else 0}개)")
-
         # 데이터프레임 저장 (정렬에 활용)
         self.data_df = data_df
 
         if lines:
             # 모든 라인을 문자열로 변환하여 저장
             self.filter_data['line'] = [str(line) for line in lines]
-            # print(f"DEBUG: 라인 데이터 저장 완료: {len(self.filter_data['line'])}개")
             self.update_line_filters()
 
         if projects:
             # 모든 프로젝트를 문자열로 변환하여 저장
             self.filter_data['project'] = sorted([str(project) for project in projects])
-            # print(f"DEBUG: 프로젝트 데이터 저장 완료: {len(self.filter_data['project'])}개")
             self.update_project_filters()
-
-        print("DEBUG: FilterWidget.set_filter_data 완료")
 
     """라인 필터 체크박스 업데이트"""
 
     def update_line_filters(self):
-        print(f"DEBUG: update_line_filters 시작 - {len(self.filter_data['line'])}개 라인")
-
         # 기존 체크박스 정리
         self._clear_layout(self.line_checkbox_layout)
 
         # 라인을 제조동별로 정렬
         sorted_lines = self.sort_lines_by_building(self.filter_data['line'])
-        print(f"DEBUG: 정렬된 라인: {sorted_lines}")
 
         # 체크박스 생성
         checkbox_count = 0
@@ -439,14 +428,10 @@ class FilterWidget(QWidget):
             self.line_checkbox_layout.addWidget(checkbox)
             checkbox_count += 1
 
-        print(f"DEBUG: {checkbox_count}개 라인 체크박스 생성 완료")
-
         # 버튼 텍스트 업데이트
         self.line_filter_btn.setText(f"Line ({len(sorted_lines)})")
-        print(f"DEBUG: 라인 버튼 텍스트 업데이트: Line ({len(sorted_lines)})")
 
     def update_project_filters(self):
-        print(f"DEBUG: update_project_filters 시작 - {len(self.filter_data['project'])}개 프로젝트")
 
         # 기존 체크박스 정리
         self._clear_layout(self.project_checkbox_layout)
@@ -469,13 +454,9 @@ class FilterWidget(QWidget):
             self.project_checkbox_layout.addWidget(checkbox)
             checkbox_count += 1
 
-        print(f"DEBUG: {checkbox_count}개 프로젝트 체크박스 생성 완료")
-
         # 버튼 텍스트 업데이트
         self.project_filter_btn.setText(f"Project ({len(self.filter_data['project'])})")
-        print(f"DEBUG: 프로젝트 버튼 텍스트 업데이트: Project ({len(self.filter_data['project'])})")
 
-    
     """레이아웃 내 위젯 모두 제거"""
     def _clear_layout(self, layout):
         while layout.count():
@@ -581,14 +562,10 @@ class FilterWidget(QWidget):
             정렬된 라인 목록
         """
         try:
-            print(f"DEBUG: sort_lines_by_building 시작 - {len(lines)}개 라인")
-
             # 데이터프레임이 있으면 생산량 기준 정렬, 없으면 알파벳 순 정렬
             if hasattr(self, 'data_df') and self.data_df is not None and not self.data_df.empty:
-                # print("DEBUG: 데이터프레임 기반 생산량 정렬 수행")
                 return self._sort_by_production_volume(lines)
             else:
-                # print("DEBUG: 데이터프레임 없음 - 알파벳 순 정렬 수행")
                 return self._sort_alphabetically(lines)
 
         except Exception as e:
@@ -607,7 +584,6 @@ class FilterWidget(QWidget):
 
             # 생산량 기준으로 제조동 정렬 (내림차순)
             sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
-            print(f"DEBUG: 제조동별 생산량 정렬: {sorted_buildings}")
 
             # 제조동별로 라인 그룹화 및 정렬
             all_lines = [line for line in lines if line in temp_data['Line'].values]
@@ -621,7 +597,6 @@ class FilterWidget(QWidget):
                 if building_lines:
                     sorted_building_lines = self._sort_lines_by_number(building_lines)
                     sorted_lines.extend(sorted_building_lines)
-                    print(f"DEBUG: {building} 제조동 라인 번호순 정렬: {sorted_building_lines}")
 
             # 누락된 라인이 있다면 마지막에 추가
             remaining_lines = [line for line in lines if line not in sorted_lines]
@@ -629,7 +604,6 @@ class FilterWidget(QWidget):
                 sorted_lines.extend(sorted(remaining_lines))
                 print(f"DEBUG: 누락 라인 추가: {remaining_lines}")
 
-            print(f"DEBUG: 생산량 기준 정렬 완료 - 총 {len(sorted_lines)}개 라인")
             return sorted_lines
 
         except Exception as e:
@@ -660,7 +634,6 @@ class FilterWidget(QWidget):
                 building_lines = self._sort_lines_by_number(building_groups[building])
                 sorted_lines.extend(building_lines)
 
-            print(f"DEBUG: 알파벳 순 정렬 완료 - 제조동: {sorted_buildings}, 총 라인: {len(sorted_lines)}")
             return sorted_lines
 
         except Exception as e:
@@ -690,7 +663,6 @@ class FilterWidget(QWidget):
 
             # 번호 순으로 정렬
             sorted_lines = sorted(lines, key=extract_line_number)
-            print(f"DEBUG: 라인 번호순 정렬: {lines} -> {sorted_lines}")
             return sorted_lines
 
         except Exception as e:

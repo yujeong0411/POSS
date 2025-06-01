@@ -83,8 +83,11 @@ class AnalysisManager:
         
         # 7. 분산 배치 분석
         results['split_allocation'] = self._run_split_allocation_analysis(df)
+
+        # 8. PortCapa 분석 추가
+        results['portcapa'] = self._run_portcapa_analysis(df)
         
-        # 8. 요약 분석
+        # 9. 요약 분석
         results['summary'] = self._run_summary_analysis(df)
         
         print("AnalysisManager: 모든 분석 완료")
@@ -261,6 +264,23 @@ class AnalysisManager:
                 return {'analyzed': True}
         except Exception as e:
             print(f"요약 분석 오류: {e}")
+        
+        return {'analyzed': False}
+    
+    """
+    PortCapa 분석 - 새로 추가
+    """
+    def _run_portcapa_analysis(self, df):
+        try:
+            if (self.result_page and 
+                hasattr(self.result_page, 'portcapa_widget') and 
+                self.result_page.portcapa_widget):
+                
+                print("    → PortCapa 위젯 분석 실행")
+                self.result_page.portcapa_widget.run_analysis(df)
+                return {'analyzed': True}
+        except Exception as e:
+            print(f"PortCapa 분석 오류: {e}")
         
         return {'analyzed': False}
 

@@ -33,10 +33,6 @@ class PlanMaintenanceAnalyzer:
         if current_df is None or current_df.empty:
             return {'analyzed': False, 'message': 'No current plan data'}
         
-        # 1. 이전 계획 로드
-        if previous_df is None:
-            previous_df = PlanMaintenanceAnalyzer._load_previous_plan()
-        
         if previous_df is None or previous_df.empty:
             return {
                 'analyzed': False, 
@@ -68,17 +64,6 @@ class PlanMaintenanceAnalyzer:
                 'analyzed': False,
                 'message': f'Analysis failed: {str(e)}'
             }
-    
-    @staticmethod
-    def _load_previous_plan():
-        """FilePaths에서 이전 계획 로드"""
-        try:
-            upload_plan = FilePaths.get("result_file")
-            if upload_plan and os.path.exists(upload_plan):
-                return pd.read_excel(upload_plan)
-        except Exception as e:
-            print(f"이전 계획 로드 실패: {e}")
-        return None
     
     @staticmethod
     def _calculate_item_maintenance(prev_df, curr_df):

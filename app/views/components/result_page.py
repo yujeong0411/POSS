@@ -327,11 +327,9 @@ class ResultPage(QWidget):
         if self.plan_maintenance_widget is None:
             self._setup_widget_references()
 
-        # 🔧 핵심: 사전할당 정보를 LeftSection에 먼저 전달
+        # 사전할당 정보를 LeftSection에 먼저 전달
         if hasattr(self, 'pre_assigned_items') and hasattr(self, 'left_section'):
             print(f"ResultPage: 사전할당 정보를 LeftSection에 전달 - {len(self.pre_assigned_items)}개")
-            if len(self.pre_assigned_items) > 0:
-                print(f"[DEBUG] 사전할당 아이템 샘플: {list(self.pre_assigned_items)[:5]}...")
             self.left_section.set_pre_assigned_items(self.pre_assigned_items)
         else:
             print("ResultPage: 사전할당 정보 없음 또는 LeftSection 없음")
@@ -418,7 +416,7 @@ class ResultPage(QWidget):
             
            # 4. 계획 유지율 위젯 업데이트
             if 'plan_maintenance' in analysis_results:
-                self._apply_plan_maintenance_results(analysis_results['plan_maintenance'])
+                print("계획 유지율 위젯 초기화는 위젯에서")
             
             # 5. 시각화 데이터 설정
             if 'capa_ratio' in analysis_results:
@@ -695,7 +693,7 @@ class ResultPage(QWidget):
                 print(f"[WARNING] 데이터 타입 변환 중 오류: {e}")
             
             # 파일 경로 저장
-            FilePaths.set("result_file", file_path)
+            # FilePaths.set("result_file", file_path)
             
             # MVC 구조 초기화
             print("[INFO] MVC 구조 초기화 시작")
@@ -1438,20 +1436,3 @@ class ResultPage(QWidget):
             if split_widget and hasattr(split_widget, 'run_analysis'):
                 # 분석 실행
                 split_widget.run_analysis(data)
-
-    def _apply_plan_maintenance_results(self, plan_results):
-        """🔧 새로 추가: 계획 유지율 결과 적용"""
-        if not self.plan_maintenance_widget:
-            print("계획 유지율: 위젯이 없음")
-            return
-        
-        try:
-            # 🔧 단순화: 분석 결과를 그대로 위젯에 전달
-            self.plan_maintenance_widget.apply_analysis_results(plan_results)
-            
-            print("계획 유지율: UI 업데이트 완료")
-            
-        except Exception as e:
-            print(f"계획 유지율 결과 적용 중 오류: {e}")
-            import traceback
-            traceback.print_exc()

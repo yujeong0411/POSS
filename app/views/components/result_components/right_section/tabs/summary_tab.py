@@ -20,12 +20,7 @@ class SummaryTab(QWidget):
         # 부모의 summary_widget 속성 설정
         if hasattr(self.parent_page, 'summary_widget'):
             self.parent_page.summary_widget = self.summary_widget
-    
-    # def update_content(self, data):
-    #     """콘텐츠 업데이트"""
-    #     # 🔧 기존 결과만 표시
-    #     if self.summary_widget:
-    #         self.summary_widget.refresh_display()
+
     
     def get_widget(self):
         """위젯 반환 (호환성 유지)"""

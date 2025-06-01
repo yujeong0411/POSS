@@ -973,11 +973,9 @@ class ModifiedLeftSection(QWidget):
 
             # 디버그 출력
             print(f"DEBUG: 그리드에서 정렬된 라인 순서: {lines}")
-            print(f"DEBUG: 필터 위젯에 전달할 라인 순서: {lines}")
 
             # 필터 위젯에 정렬된 라인 순서 직접 설정 - 강제로 호출
             if hasattr(self, 'filter_widget') and self.filter_widget:
-                print("DEBUG: 필터 위젯 존재 - 데이터 설정 중...")
                 self.filter_widget.set_filter_data(lines, projects)
                 print("DEBUG: 필터 위젯 데이터 설정 완료")
             else:

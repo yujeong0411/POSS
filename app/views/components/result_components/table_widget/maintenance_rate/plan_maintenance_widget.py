@@ -7,6 +7,7 @@ from PyQt5.QtGui import QFont, QCursor, QFontMetrics
 from app.views.components.result_components.table_widget.maintenance_rate.maintenance_table_widget import ItemMaintenanceTable, RMCMaintenanceTable
 from app.views.components.common.enhanced_message_box import EnhancedMessageBox
 from app.analysis.output.plan_maintenance import PlanMaintenanceAnalyzer
+from app.models.common.file_store import DataStore, FilePaths
 
 """
 계획 유지율 표시 위젯
@@ -14,8 +15,6 @@ from app.analysis.output.plan_maintenance import PlanMaintenanceAnalyzer
 class PlanMaintenanceWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        # 데이터 매니저 생성
-        # self.data_manager = PlanDataManager()
         
         # UI 초기화
         self.setup_ui()
@@ -31,8 +30,8 @@ class PlanMaintenanceWidget(QWidget):
         self.changed_rmcs = set()
 
         # 이전 계획 정보 (사용자 선택)
-        self.previous_plan_df = None
-        self.previous_plan_path = None
+        self.user_selected_plan_df = None  # 사용자가 직접 선택한 계획
+        self.user_selected_plan_path = None
         
     """
     UI 초기화
@@ -136,7 +135,7 @@ class PlanMaintenanceWidget(QWidget):
         self.rate_title_label.setFont(title_font)
         self.rate_title_label.setStyleSheet("color: #333333;")
         
-        self.item_rate_label = QLabel("100%")
+        self.item_rate_label = QLabel("--")
         self.item_rate_label.setFont(value_font)
         self.item_rate_label.setStyleSheet("color: #1428A0;")
         
@@ -261,8 +260,11 @@ class PlanMaintenanceWidget(QWidget):
         if file_path:
             try:
                 # 이전 계획 로드
-                self.previous_plan_df = pd.read_excel(file_path)
-                self.previous_plan_path = file_path
+                self.user_selected_plan_df = pd.read_excel(file_path)
+                self.user_selected_plan_path = file_path
+
+                print(f"사용자가 새로운 이전 계획 선택: {file_path}")
+                print(f"이전 계획 데이터 형태: {self.user_selected_plan_df.shape}")
                 
                 # 상태 레이블 업데이트
                 file_name = os.path.basename(file_path)
@@ -271,7 +273,8 @@ class PlanMaintenanceWidget(QWidget):
                 self.plan_status_label.setStyleSheet("color: #1428A0; font-weight: bold;")
                 self.plan_status_label.setToolTip(f"Full path: {file_path}")
                 
-                # 🔧 재분석 요청 (Controller를 통해)
+                # 재분석 요청 (Controller를 통해)
+                print("사용자 선택 후 Controller를 통한 재분석 요청")
                 self.request_reanalysis()
                 
                 # 성공 메시지
@@ -292,7 +295,6 @@ class PlanMaintenanceWidget(QWidget):
                 )
 
     def run_analysis(self, df):
-        """🔧 새로 추가: 다른 위젯들과 동일한 패턴"""
 
         print(f"PlanMaintenanceWidget: run_analysis 호출됨 - 데이터 행 수: {len(df) if df is not None else 0}")
     
@@ -310,8 +312,13 @@ class PlanMaintenanceWidget(QWidget):
         try:
             print("PlanMaintenanceWidget: 분석 시작")
             
-            # 이전 계획 가져오기 (사용자가 선택한 것)
+            # 이전 계획 가져오기 
             previous_df = self.get_previous_plan()
+
+            if previous_df is None or previous_df.empty:
+                print("PlanMaintenanceWidget: 이전 계획이 없어서 분석 불가")
+                self.plan_status_label.setText("No previous plan available for comparison")
+                self.plan_status_label.setStyleSheet("color: #6c757d; font-style: italic;")
             
             # 분석 수행
             result = PlanMaintenanceAnalyzer.analyze_maintenance_rate(df, previous_df)
@@ -356,6 +363,8 @@ class PlanMaintenanceWidget(QWidget):
         
         self.item_maintenance_rate = item_data.get('rate', 0.0)
         self.rmc_maintenance_rate = rmc_data.get('rate', 0.0)
+
+        print(f"단일 결과 적용: Item 유지율={self.item_maintenance_rate}%, RMC 유지율={self.rmc_maintenance_rate}%")
         
         # 변경된 아이템 정보 저장
         self.changed_items = result.get('changed_items', set())
@@ -391,6 +400,8 @@ class PlanMaintenanceWidget(QWidget):
         adj_rmc = adjusted.get('rmc_data', {})
         self.adjusted_item_maintenance_rate = adj_item.get('rate', 0.0)
         self.adjusted_rmc_maintenance_rate = adj_rmc.get('rate', 0.0)
+
+        print(f"비교 결과 적용: Item 원본={self.item_maintenance_rate}% -> 조정={self.adjusted_item_maintenance_rate}%")
         
         # 변경된 아이템 정보 (조정된 결과에서)
         self.changed_items = adjusted.get('changed_items', set())
@@ -464,19 +475,42 @@ class PlanMaintenanceWidget(QWidget):
     
     def request_reanalysis(self):
         """재분석 요청 - Controller에게 알림"""
-        # 🔧 MVC 패턴에 맞게 Controller에게 재분석 요청
-        if hasattr(self.parent(), 'controller') and self.parent().controller:
-            print("PlanMaintenanceWidget: 재분석 요청")
-            # Controller의 재분석 메서드 호출
-            self.parent().controller._run_complete_analysis("계획 변경")
+        # Controller에게 재분석 요청
+        parent_widget = self.parent()
+        while parent_widget:
+            if hasattr(parent_widget, 'controller') and parent_widget.controller:
+                controller = parent_widget.controller
+                print("  → Controller 발견! 재분석 실행")
+                controller._run_complete_analysis("계획 변경")
+                break
+            parent_widget = parent_widget.parent()
         else:
             print("PlanMaintenanceWidget: Controller 없음, 직접 분석 불가")
         
         
     def get_previous_plan(self):
         """현재 선택된 이전 계획 반환"""
-        return self.previous_plan_df
+        # 사용자가 Result 페이지에서 직접 선택한 파일
+        if self.user_selected_plan_df is not None:
+            print("PlanMaintenanceWidget: Result 페이지에서 선택한 이전 계획 사용")
+            return self.user_selected_plan_df
     
+        # DataStore에서 이전 계획 데이터 확인
+        previous_plan_data = DataStore.get("result_file")
+        if previous_plan_data is not None:
+            print("PlanMaintenanceWidget: DataStore에서 이전 계획 데이터 발견")
+            return previous_plan_data
+        
+        file_path = FilePaths.get("result_file")
+        if file_path and os.path.exists(file_path):
+            print(f"PlanMaintenanceWidget: FilePaths에서 이전 계획 파일 발견 ({file_path}")
+            
+            # 파일 로드 시도
+            previous_df = pd.read_excel(file_path)
+            print(f"PlanMaintenanceWidget: 이전 계획 파일 로드 성공 - {len(previous_df)}개 행")
+
+            return previous_df
+            
     """
     탭 크기 힌트 계산
     """

@@ -459,7 +459,6 @@ class ItemGridWidget(QWidget):
     """
     def on_item_delete_requested(self, item, container):
         print(f"DEBUG: ItemGridWidget.on_item_delete_requested 호출됨")
-        print(f"DEBUG: 컨테이너에서 아이템 제거")
         if container:
             # 아이템 ID 추출
             item_id = ItemKeyManager.extract_item_id(item)

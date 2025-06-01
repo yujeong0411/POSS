@@ -182,25 +182,18 @@ class ItemsContainer(QWidget):
             self.items.remove(item)
             item.deleteLater()
 
-            # 아이템 ID로 변경 시그널 발생
-            # self.itemsChanged.emit(item_id)
-
-            # 그리드 위젯 찾기 및 itemRemoved 시그널 발생
-            parent = self.parent()
-            while parent and not hasattr(parent, 'itemRemoved'):
-                parent = parent.parent()
-            
-            # 그리드 위젯의 itemRemoved 시그널만 발생시키고,
-            # itemsChanged 시그널은 발생시키지 않음
-            if parent and hasattr(parent, 'itemRemoved'):
-                print("그리드 위젯의 itemRemoved 시그널 발생")
-                parent.itemRemoved.emit(item)
-                # itemsChanged 시그널은 발생시키지 않음
+            # MVC 모드에서는 Controller만 호출 
+            controller = self._find_controller()
+            if controller:
+                print("삭제: Controller를 통한 모델 업데이트 및 분석")
+                # Controller의 모델을 통해 삭제 처리 (분석 포함)
+                controller.model.delete_item_by_id(item_id)
+                return
             else:
-                # 그리드 위젯을 찾지 못한 경우에만 폴백으로 itemsChanged 시그널 발생
-                print("itemsChanged 시그널 발생 (폴백)")
+                # Legacy 모드: 기존 방식
+                print("삭제: Legacy 모드")
                 self.itemsChanged.emit(item_id)
-
+            
             self.update_visibility()
 
     """

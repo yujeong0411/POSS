@@ -86,15 +86,9 @@ class KpiScore:
         # Due_LT 내에 모두 충족된 수요
         # Item과 To_site 조합으로 실제 생산량과 요구량 비교
         df = self.df
-        # To_stie가 없다면 직접 추출
-        if 'To_site' not in self.df.columns:
-            df = df.copy()
-            df['To_site'] = df['Item'].str[7:8]
-
-        # demand_df에서도 To_site 컬럼 확인
         demand_copy = self.demand_df.copy()
-        if 'To_site' not in demand_copy.columns:
-            demand_copy['To_site'] = demand_copy['Item'].str[7:8]
+
+        demand_summary = pd.DataFrame()
         
         # 전체 모델/To_site 조합 수
         if 'SOP' in demand_copy.columns:
@@ -119,7 +113,7 @@ class KpiScore:
         sop_score = (successful_combinations / total_demand * 100) if total_demand > 0 else 100.0
         
         return sop_score
-    
+
 
     """
     가동률 점수 계산
@@ -146,11 +140,6 @@ class KpiScore:
         except Exception as e:
             print(f"생산능력 데이터 로드 중 오류 발생: {str(e)}")
             return {}
-        
-        # print("==== 데이터프레임 구조 확인 ====")
-        # print(f"df_capa_qty 인덱스: {df_capa_qty.index.tolist()}")
-        # print(f"df_capa_qty 컬럼: {df_capa_qty.columns.tolist()}")
-        # print(f"df_capa_qty 형태: {df_capa_qty.shape}")
 
         # 총 생산량 계산
         total_qty = self.df['Qty'].sum()
@@ -349,10 +338,6 @@ class KpiScore:
             print(f"가동률 점수 계산 오류: {e}")
             util_score = 0.0
 
-        # 각 점수 계산
-        # mat_score = self.calculate_material_score()
-        # sop_score = self.calculate_sop_score()
-        # util_score = self.calculate_utilization_score()
         total_score = self.calculate_total_score(mat_score, sop_score, util_score)
 
         scores = {

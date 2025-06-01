@@ -296,12 +296,12 @@ class AdjustmentController(QObject):
     def _on_item_deleted(self, item_id):
         print(f"Controller: 아이템 삭제 - ID: {item_id}")
         
-        # 1. UI에서 아이템 제거
-        item_widget = self._find_item_widget_by_id(item_id)
-        if item_widget:
-            container = item_widget.parent()
-            if container:
-                container.remove_item(item_widget)
+        # # 1. UI에서 아이템 제거
+        # item_widget = self._find_item_widget_by_id(item_id)
+        # if item_widget:
+        #     container = item_widget.parent()
+        #     if container:
+        #         container.remove_item(item_widget)
         
         # 2. 완전한 분석 
         self._run_complete_analysis("아이템 삭제")

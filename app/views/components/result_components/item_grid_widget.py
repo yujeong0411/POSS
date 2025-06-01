@@ -471,14 +471,15 @@ class ItemGridWidget(QWidget):
 
             # 컨테이너에서 아이템 제거
             container.remove_item(item)
+            print(f"DEBUG: 삭제 처리를 Container에 위임 완료")
 
-            print(f"DEBUG: itemRemoved 시그널 발생(item_grid)")
-            if item_id:
-                # ID가 있는 경우 ID만 전달
-                self.itemRemoved.emit(item_id)
-            else:
-                # ID가 없는 경우 아이템 객체 전달 (폴백)
-                self.itemRemoved.emit(item)
+            # print(f"DEBUG: itemRemoved 시그널 발생(item_grid)")
+            # if item_id:
+            #     # ID가 있는 경우 ID만 전달
+            #     self.itemRemoved.emit(item_id)
+            # else:
+            #     # ID가 없는 경우 아이템 객체 전달 (폴백)
+            #     self.itemRemoved.emit(item)
         else:
             print(f"DEBUG: 아이템이 속한 컨테이너를 찾을 수 없음")
 

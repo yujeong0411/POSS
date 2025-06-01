@@ -73,6 +73,14 @@ class AssignmentModel(QObject):
     현재 할당 결과 반환
     """
     def get_dataframe(self) -> pd.DataFrame:
+        print(f"[Model] get_dataframe 호출, self._df 타입: {type(self._df)}")
+    
+        if not isinstance(self._df, pd.DataFrame):
+            print(f"[Model ERROR] self._df가 DataFrame이 아님: {type(self._df)}")
+            if isinstance(self._df, dict):
+                print(f"[Model ERROR] dict 키들: {list(self._df.keys())}")
+            return pd.DataFrame()  # 빈 DataFrame 반환
+    
         df = self._df.copy()
         return self._ensure_correct_types(df)
 

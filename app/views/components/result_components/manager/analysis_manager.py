@@ -4,7 +4,6 @@ from app.analysis.output.material_shortage_analysis import MaterialShortageAnaly
 from app.analysis.output.daily_capa_utilization import CapaUtilization
 from app.analysis.output.capa_ratio import CapaRatioAnalyzer
 from app.models.common.file_store import DataStore
-from app.analysis.output.plan_maintenance import PlanMaintenanceAnalyzer
 
 """
 모든 분석을 담당하는 클래스
@@ -99,28 +98,39 @@ class AnalysisManager:
     def _run_kpi_analysis(self, df):
         try:
             kpi_engine = self.engines['kpi']
+            if not kpi_engine:
+                return {'base_scores': {}, 'adjust_scores': {}}
             
             # 데이터 설정
             demand_df = self._get_demand_data()
             material_analyzer = self.engines.get('material')
             kpi_engine.set_data(df, material_analyzer, demand_df)
             
-            # Base/Adjust 점수 계산
-            base_scores = kpi_engine.calculate_all_scores()
-            
             # 조정 여부 확인
             has_adjustments = self._check_for_adjustments()
             if has_adjustments:
-                # 조정된 데이터로 다시 계산
+                print("    → 조정 감지: Base/Adjust 점수 각각 계산")
+
+                # Base 점수: 원본 데이터로 계산
+                original_df = self.controller.model._original_df
+                kpi_engine.set_data(original_df, material_analyzer, demand_df)
+                base_scores = kpi_engine.calculate_all_scores()
+                
+                # Adjust 점수: 조정된 데이터로 계산
+                kpi_engine.set_data(df, material_analyzer, demand_df)
                 adjust_scores = kpi_engine.calculate_all_scores()
+                
                 return {
                     'base_scores': base_scores,
                     'adjust_scores': adjust_scores
                 }
             else:
+                print("    → 조정 없음: Base 점수만 계산")
+                base_scores = kpi_engine.calculate_all_scores()
+                
                 return {
                     'base_scores': base_scores,
-                    'adjust_scores': {}
+                    'adjust_scores': {}  # 조정 없으므로 빈 딕셔너리
                 }
             
         except Exception as e:
@@ -311,7 +321,15 @@ class AnalysisManager:
     def _get_demand_data(self):
         try:
             organized = DataStore.get("organized_dataframes", {})
-            return organized.get("demand", pd.DataFrame())
+            demand_data = organized.get("demand", pd.DataFrame())
+        
+            # 딕셔너리면 첫 번째 DataFrame 추출
+            if isinstance(demand_data, dict):
+                for value in demand_data.values():
+                    if isinstance(value, pd.DataFrame):
+                        return value
+                return pd.DataFrame()
+        
         except:
             return pd.DataFrame()
 

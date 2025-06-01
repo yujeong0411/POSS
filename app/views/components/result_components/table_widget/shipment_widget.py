@@ -832,7 +832,7 @@ class ShipmentWidget(QWidget):
             
             # 시그널 발생
             print(f"출하 상태 업데이트: {len(failure_items)} 개의 실패 아이템")
-            self.shipment_status_updated.emit(failure_items)
+            # self.shipment_status_updated.emit(failure_items)
             
         except Exception as e:
             import traceback

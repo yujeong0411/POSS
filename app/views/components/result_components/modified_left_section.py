@@ -262,7 +262,7 @@ class ModifiedLeftSection(QWidget):
         self.update_ui_with_signals()
         
         # 분석 결과 적용 (재분석 없음)
-        self._apply_analysis_results(analysis_results)
+        # self._apply_analysis_results(analysis_results)
 
     def update_ui_only(self, df, analysis_results):
         """🎯 UI만 업데이트 - 분석 없음 (MVC 전용)"""
@@ -279,47 +279,47 @@ class ModifiedLeftSection(QWidget):
         self.apply_all_filters()
         
         # 분석 결과 적용 (재분석 없음)
-        self._apply_analysis_results(analysis_results)
+        # self.apply_analysis_results(analysis_results)
         
         # 스크롤 위치 복원
         if scroll_position:
             QTimer.singleShot(100, lambda: self._restore_scroll_position(scroll_position))
 
-    def _apply_analysis_results(self, analysis_results):
-        """🎯 분석 결과만 적용 - 재분석 없음"""
-        if not analysis_results:
-            return
+    # def _apply_analysis_results(self, analysis_results):
+    #     """🎯 분석 결과만 적용 - 재분석 없음"""
+    #     if not analysis_results:
+    #         return
         
-         # 사전할당 상태 적용
-        if hasattr(self, 'pre_assigned_items') and self.pre_assigned_items:
-            print(f"LeftSection: 사전할당 상태 적용 - {len(self.pre_assigned_items)}개 아이템")
-            self._apply_pre_assigned_status_to_items()
+    #      # 사전할당 상태 적용
+    #     if hasattr(self, 'pre_assigned_items') and self.pre_assigned_items:
+    #         print(f"LeftSection: 사전할당 상태 적용 - {len(self.pre_assigned_items)}개 아이템")
+    #         self._apply_pre_assigned_status_to_items()
         
-        # 자재 부족 결과 적용
-        if 'material' in analysis_results:
-            material_data = analysis_results['material']
-            if 'shortage_results' in material_data:
-                self.set_current_shortage_items(material_data['shortage_results'])
+    #     # 자재 부족 결과 적용
+    #     if 'material' in analysis_results:
+    #         material_data = analysis_results['material']
+    #         if 'shortage_results' in material_data:
+    #             self.set_current_shortage_items(material_data['shortage_results'])
         
-        # 출하 실패 결과 적용 (필요시)
-        if 'shipment' in analysis_results:
-            print("LeftSection: 출하 실패 상태 적용")
-            shipment_data = analysis_results['shipment']
-            if 'failure_items' in shipment_data:
-                self.set_shipment_failure_items(shipment_data['failure_items'])
-            elif shipment_data.get('analyzed'):
-                # 출하 분석이 완료되었으면 ResultPage에서 실패 정보 가져오기
-                if (hasattr(self, 'parent_page') and 
-                    self.parent_page and 
-                    hasattr(self.parent_page, 'shipment_widget') and
-                    self.parent_page.shipment_widget):
+    #     # 출하 실패 결과 적용 (필요시)
+    #     if 'shipment' in analysis_results:
+    #         print("LeftSection: 출하 실패 상태 적용")
+    #         shipment_data = analysis_results['shipment']
+    #         if 'failure_items' in shipment_data:
+    #             self.set_shipment_failure_items(shipment_data['failure_items'])
+    #         elif shipment_data.get('analyzed'):
+    #             # 출하 분석이 완료되었으면 ResultPage에서 실패 정보 가져오기
+    #             if (hasattr(self, 'parent_page') and 
+    #                 self.parent_page and 
+    #                 hasattr(self.parent_page, 'shipment_widget') and
+    #                 self.parent_page.shipment_widget):
                     
-                    # Shipment 위젯에서 실패 정보 가져오기
-                    failure_items = getattr(self.parent_page.shipment_widget, 'failure_items', {})
-                    if failure_items:
-                        self.set_shipment_failure_items(failure_items)
+    #                 # Shipment 위젯에서 실패 정보 가져오기
+    #                 failure_items = getattr(self.parent_page.shipment_widget, 'failure_items', {})
+    #                 if failure_items:
+    #                     self.set_shipment_failure_items(failure_items)
 
-        print("LeftSection: 분석 결과 적용 완료")
+    #     print("LeftSection: 분석 결과 적용 완료")
         
     """
     데이터프레임 타입 정규화

@@ -92,7 +92,7 @@ class KpiScore:
         
         # 전체 모델/To_site 조합 수
         if 'SOP' in demand_copy.columns:
-            demand_summary = demand_copy.groupby(['Item', 'To_site'])['SOP'].first().reset_index()
+            demand_summary = demand_copy.groupby(['Item', 'To_Site'])['SOP'].first().reset_index()
             demand_summary.rename(columns={'SOP':'DemandQty'}, inplace=True)
 
         total_demand = len(demand_summary)
@@ -103,7 +103,7 @@ class KpiScore:
         due_lt_production.rename(columns={'Qty': 'ProducedQty'}, inplace=True)
 
         # 병합하여 비교
-        comparison = pd.merge(demand_summary, due_lt_production, on=['Item', 'To_site'], how='left')
+        comparison = pd.merge(demand_summary, due_lt_production, on=['Item', 'To_Site'], how='left')
         comparison['ProducedQty'] = comparison['ProducedQty'].fillna(0)
         
         # SOP 성공한 모델/To_site 조합 수 (Due_LT 내 생산량 >= SOP 요구량)

@@ -335,6 +335,7 @@ class ResultPage(QWidget):
             print("ResultPage: 사전할당 정보 없음 또는 LeftSection 없음")
         
         # 분석 결과로 위젯 업데이트 (재분석 없음)
+        # self._update_widgets_with_analysis_results(analysis_results)
         self._update_widgets_with_analysis_results(analysis_results)
 
     def update_ui_only(self, df, analysis_results):
@@ -829,7 +830,7 @@ class ResultPage(QWidget):
         shipment_tab = self.tab_manager.get_tab_instance('Shipment')
         if shipment_tab:
             self.shipment_widget = shipment_tab.shipment_widget
-            self.shipment_widget.shipment_status_updated.connect(self.on_shipment_status_updated)
+            # self.shipment_widget.shipment_status_updated.connect(self.on_shipment_status_updated)
 
         # SplitView 위젯 
         splitview_tab = self.tab_manager.get_tab_instance('SplitView')
@@ -875,23 +876,23 @@ class ResultPage(QWidget):
         if hasattr(self, 'material_widget') and self.material_widget:
             self.material_analyzer = self.material_widget.get_material_analyzer()
 
-    """
-    출하 상태가 업데이트될 때 호출되는 함수
-    출하 실패 정보가 업데이트되면 왼쪽 섹션의 아이템에 표시
+    # """
+    # 출하 상태가 업데이트될 때 호출되는 함수
+    # 출하 실패 정보가 업데이트되면 왼쪽 섹션의 아이템에 표시
     
-    Args:
-        failure_items (dict): 아이템 코드를 키로, 실패 정보를 값으로 가진 딕셔너리
-    """
-    def on_shipment_status_updated(self, failure_items):
+    # Args:
+    #     failure_items (dict): 아이템 코드를 키로, 실패 정보를 값으로 가진 딕셔너리
+    # """
+    # def on_shipment_status_updated(self, failure_items):
         
-        # 왼쪽 섹션에 출하 실패 정보 전달
-        if hasattr(self, 'left_section'):
-            self.left_section.set_shipment_failure_items(failure_items)
+    #     # 왼쪽 섹션에 출하 실패 정보 전달
+    #     if hasattr(self, 'left_section'):
+    #         self.left_section.set_shipment_failure_items(failure_items)
         
-        # 범례 위젯의 출하 체크박스 자동 활성화
-        if hasattr(self.left_section, 'legend_widget') and len(failure_items) > 0:
-            # 출하 필터 자동 활성화
-            self.left_section.legend_widget.checkbox_map['shipment'].setChecked(True)
+    #     # 범례 위젯의 출하 체크박스 자동 활성화
+    #     if hasattr(self.left_section, 'legend_widget') and len(failure_items) > 0:
+    #         # 출하 필터 자동 활성화
+    #         self.left_section.legend_widget.checkbox_map['shipment'].setChecked(True)
         
     """
     각 지표별 초기 시각화 생성
@@ -915,16 +916,16 @@ class ResultPage(QWidget):
         elif viz_type == "PortCapa":
             pass
 
-    """
-    출하 상태가 업데이트될 때 호출되는 함수
-    출하 실패 정보가 업데이트되면 왼쪽 섹션의 아이템에 표시
-    """
-    def on_shipment_status_updated(self, failure_items):
-        print(f"출하 상태 업데이트: {len(failure_items)} 개의 실패 아이템")
+    # """
+    # 출하 상태가 업데이트될 때 호출되는 함수
+    # 출하 실패 정보가 업데이트되면 왼쪽 섹션의 아이템에 표시
+    # """
+    # def on_shipment_status_updated(self, failure_items):
+    #     print(f"출하 상태 업데이트: {len(failure_items)} 개의 실패 아이템")
         
-        # 왼쪽 섹션에 출하 실패 정보 전달
-        if hasattr(self, 'left_section'):
-            self.left_section.set_shipment_failure_items(failure_items)
+    #     # 왼쪽 섹션에 출하 실패 정보 전달
+    #     if hasattr(self, 'left_section'):
+    #         self.left_section.set_shipment_failure_items(failure_items)
 
     """
     모든 시각화 차트 업데이트

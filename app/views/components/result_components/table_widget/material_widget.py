@@ -146,7 +146,7 @@ class MaterialWidget(QWidget):
         self.update_shortage_items_table()
         
         # 부족 정보 시그널 발생
-        self.material_shortage_updated.emit(self.shortage_results)
+        # self.material_shortage_updated.emit(self.shortage_results)
     
     """정렬 인디케이터가 변경될 때 호출되는 메서드"""
     def on_sort_indicator_changed(self, column_index, sort_order):

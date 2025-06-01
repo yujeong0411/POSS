@@ -1,15 +1,15 @@
+# splash_start.py - 새로운 스플래시 화면 파일
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QProgressBar, QMessageBox
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QProgressBar
+from PyQt5.QtCore import Qt, QTimer, pyqtSlot
 from PyQt5.QtGui import QFont, QColor, QPainter, QPen, QBrush, QLinearGradient
 from app.resources.fonts.font_manager import font_manager
 from app.models.common.screen_manager import *
 
-from app.views.main_window import MainWindow
-import traceback
 
+class SplashStart(QWidget):
+    """스레드 기반 스플래시 화면"""
 
-class SamsungSplashScreen(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Samsung Production Planning System")
@@ -18,30 +18,43 @@ class SamsungSplashScreen(QWidget):
         screen = self.screen()
         screen_size = screen.availableGeometry()
 
-        self.resize(int(screen_size.width()*0.5), int(screen_size.height()*0.4))
+        self.resize(int(screen_size.width() * 0.5), int(screen_size.height() * 0.4))
         self.center()
 
         # 배경 설정
-        self.backgroundColor = QColor(255, 255, 255) # 흰색
-        self.accentColor = QColor(20, 40, 160) # 파란색
+        self.backgroundColor = QColor(255, 255, 255)  # 흰색
+        self.accentColor = QColor(20, 40, 160)  # 파란색
 
+        self.setup_ui()
+
+        # 초기 진행률
+        self.progress_value = 0
+
+    def setup_ui(self):
+        """UI 구성"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(40, 40, 40, 40)
         layout.setSpacing(20)
 
-        bold_font = font_manager.get_just_font("SamsungSharpSans-Bold").family()
-        normal_font = font_manager.get_just_font("SamsungOne-700").family()
+        try:
+            bold_font = font_manager.get_just_font("SamsungSharpSans-Bold").family()
+            normal_font = font_manager.get_just_font("SamsungOne-700").family()
+        except:
+            # 폰트 로드 실패 시 기본 폰트 사용
+            bold_font = "Arial"
+            normal_font = "Arial"
 
         # 로고 텍스트
         logo_label = QLabel("SAMSUNG")
         logo_label.setAlignment(Qt.AlignCenter)
         logo_label.setStyleSheet(
-            f"font-family: {bold_font}; font-size: {f(40)}px; font-weight:bold; color: rgb({self.accentColor.red()}, {self.accentColor.green()}, {self.accentColor.blue()});")
+            f"font-family: {bold_font}; font-size: {f(40)}px; font-weight:bold; "
+            f"color: rgb({self.accentColor.red()}, {self.accentColor.green()}, {self.accentColor.blue()});")
 
         # 부제목
         subtitle_label = QLabel("Production Planning Optimization System")
         subtitle_label.setAlignment(Qt.AlignCenter)
-        subtitle_label.setStyleSheet(f"font-family:{normal_font}; font-size: {f(21)}px;  color: #555555;")
+        subtitle_label.setStyleSheet(f"font-family:{normal_font}; font-size: {f(21)}px; color: #555555;")
 
         # 로딩 상태 메시지
         self.status_label = QLabel("Initializing...")
@@ -80,75 +93,26 @@ class SamsungSplashScreen(QWidget):
         layout.addStretch(1)
         layout.addWidget(version_label)
 
-        # 타이머 설정
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_progress)
-        self.timer.start(30)  # 30ms마다 업데이트
-
-        self.progress_value = 0
-        self.loading_stages = [
-            "Initializing application...",
-            "Loading resources...",
-            "Preparing UI components...",
-            "Starting main application..."
-        ]
-        self.current_stage = 0
-        self.main_window = None
-
-    """
-    창을 화면 중앙에 배치
-    """
     def center(self):
+        """창을 화면 중앙에 배치"""
         screen = QApplication.primaryScreen().geometry()
         size = self.geometry()
         self.move(int((screen.width() - size.width()) / 2),
                   int((screen.height() - size.height()) / 2))
 
-    """
-    프로그레스 바 업데이트 및 메인 앱 시작
-    """
-    def update_progress(self):
-        self.progress_value += 1
-        self.progress_bar.setValue(self.progress_value)
+    @pyqtSlot(int, str)
+    def update_progress_external(self, progress, message):
+        """외부에서 진행률 업데이트 (스레드 안전)"""
+        self.progress_value = progress
+        self.progress_bar.setValue(progress)
+        self.status_label.setText(message)
 
-        # 진행 단계 업데이트
-        stage_progress = 100 / len(self.loading_stages)
+        # UI 강제 업데이트
+        self.repaint()
+        QApplication.processEvents()  # 이벤트 처리 강제 실행
 
-        if self.progress_value % int(stage_progress) == 0 and self.current_stage < len(self.loading_stages):
-            self.status_label.setText(self.loading_stages[self.current_stage])
-            self.current_stage += 1
-
-        # 로딩 완료 시 메인 앱 실행 및 스플래시 숨기기
-        if self.progress_value >= 100:
-            self.timer.stop()
-            self.hide()
-
-            try:
-                self.main_window = MainWindow()
-                self.main_window.show()
-
-                self.close()
-
-            except Exception as e:
-                traceback.print_exc()
-
-                # 사용자에게 오류 메시지 표시
-                error_box = QMessageBox()
-                error_box.setIcon(QMessageBox.Critical)
-                error_box.setText("Failed to start the application")
-                error_box.setInformativeText(f"Error occurred: {str(e)}")
-                error_box.setDetailedText(traceback.format_exc())
-                error_box.setWindowTitle("Start Error")
-                error_box.exec_()
-
-                # 오류 발생 시 애플리케이션 종료
-                self.close()
-                QApplication.instance().quit()
-
-    """
-    배경 그라데이션 및 테두리 그리기
-    """
     def paintEvent(self, event):
+        """배경 그라데이션 및 테두리 그리기"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 

@@ -88,11 +88,16 @@ class KpiScore:
         df = self.df
         demand_copy = self.demand_df.copy()
 
+        if 'To_Site' in demand_copy.columns and 'To_site' not in demand_copy.columns:
+            demand_copy = demand_copy.rename(columns={'To_Site': 'To_site'})
+            print("demand_df 컬럼명 'To_Site' -> 'To_site'로 변경")
+        print(f"통일 후 result_data To_site: {'To_site' in df.columns}")
+        print(f"통일 후 demand_df To_site: {'To_site' in demand_copy.columns}")
+
         demand_summary = pd.DataFrame()
-        
         # 전체 모델/To_site 조합 수
         if 'SOP' in demand_copy.columns:
-            demand_summary = demand_copy.groupby(['Item', 'To_Site'])['SOP'].first().reset_index()
+            demand_summary = demand_copy.groupby(['Item', 'To_site'])['SOP'].first().reset_index()
             demand_summary.rename(columns={'SOP':'DemandQty'}, inplace=True)
 
         total_demand = len(demand_summary)
@@ -103,7 +108,7 @@ class KpiScore:
         due_lt_production.rename(columns={'Qty': 'ProducedQty'}, inplace=True)
 
         # 병합하여 비교
-        comparison = pd.merge(demand_summary, due_lt_production, on=['Item', 'To_Site'], how='left')
+        comparison = pd.merge(demand_summary, due_lt_production, on=['Item', 'To_site'], how='left')
         comparison['ProducedQty'] = comparison['ProducedQty'].fillna(0)
         
         # SOP 성공한 모델/To_site 조합 수 (Due_LT 내 생산량 >= SOP 요구량)

@@ -543,17 +543,28 @@ class ItemsContainer(QWidget):
 
                         controller = self._find_controller()
                         if controller:
-                            # Model 업데이트만 수행 (UI는 이미 완료됨)
-                            old_line = source.item_data.get('Line') if hasattr(source, 'item_data') else None
-                            old_time = source.item_data.get('Time') if hasattr(source, 'item_data') else None
-                            new_line = item_data.get('Line')
-                            new_time = item_data.get('Time')
-                            item_code = item_data.get('Item')
-                            item_id = item_data.get('_id')
-                            
-                            if old_line and old_time is not None and new_line and new_time is not None:
-                                print(f"드래그앤드롭: 직접 Model 업데이트 - {item_code}")
-                                controller.model.move_item(item_code, old_line, old_time, new_line, new_time, item_id)
+                            # 변경 필드 정보 생성
+                            changed_fields = {}
+                            if hasattr(source, 'item_data') and source.item_data:
+                                if ('Line' in source.item_data and 'Line' in item_data and
+                                        source.item_data.get('Line', '') != item_data.get('Line', '')):
+                                    changed_fields['Line'] = {
+                                        'from': source.item_data.get('Line', ''),
+                                        'to': item_data.get('Line', '')
+                                    }
+
+                                if ('Time' in source.item_data and 'Time' in item_data and
+                                        source.item_data.get('Time', '') != item_data.get('Time', '')):
+                                    changed_fields['Time'] = {
+                                        'from': source.item_data.get('Time', ''),
+                                        'to': item_data.get('Time', '')
+                                    }
+
+                            # 직접 Model 조작하지 않고 Controller에 시그널로만 알림
+                            if changed_fields:
+                                print("드래그앤드롭: Controller에 변경 시그널 발생")
+                                self.itemDataChanged.emit(new_item, item_data, changed_fields)
+                            # controller.model.move_item() 호출 삭제!
 
                     # 🔧 원본 삭제는 시그널 없이 수행
                     if source_container and hasattr(source_container, '_remove_item_without_signal'):

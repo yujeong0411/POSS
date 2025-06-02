@@ -1,4 +1,3 @@
-# main.py - 수정된 전체 버전
 import sys
 import traceback
 from PyQt5.QtWidgets import QApplication, QMessageBox, QStyleFactory
@@ -183,6 +182,10 @@ if __name__ == "__main__":
     sys.excepthook = exception_hook
 
     try:
+        from app.resources.fonts.font_manager import font_manager
+        success = font_manager.set_app_font(app, "SamsungSharpSans-Bold")
+        if not success:
+            print("경고: 폰트 설정 실패, 기본 폰트 사용")
         # 스플래시 컨트롤러 생성 및 시작
         controller = SplashController(app)
         controller.start_application()

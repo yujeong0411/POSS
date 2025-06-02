@@ -303,7 +303,7 @@ class PlanAdjustmentValidator:
         # 마스터 데이터에서 라인과 시프트 용량 가져오기
         capacity = self.get_line_capacity(line, time)
         
-        print("validate_capacity",current_allocation,new_qty,capacity)
+        print("validate_capacity",current_allocation, new_qty, capacity)
         # 용량 검증
         if capacity is not None:  # 용량 정보가 있는 경우만 검증
             # 생산 능력이 명시적으로 0인 경우 
@@ -472,83 +472,120 @@ class PlanAdjustmentValidator:
             return None
 
         try:
-            # 라인이 인덱스에 있는 경우
+            # 🔧 핵심 수정: 제조동 제약을 가장 먼저 확인 (CapaUtilization과 동일하게)
+            if len(line) >= 1:
+                factory = line[0]  # 라인 코드의 첫 글자 (예: 'I'_01 -> 'I')
+                print(f"[DEBUG] 제조동: {factory}")
+                
+                # 1. Max_line 제약 확인 - 최우선 체크
+                max_line_key = f'Max_line_{factory}'
+                max_line_rows = self.capa_qty_data[self.capa_qty_data['Line'] == max_line_key]
+                
+                if not max_line_rows.empty and time in max_line_rows.columns:
+                    max_line = max_line_rows.iloc[0][time]
+                    print(f"[DEBUG] Max_line_{factory} = {max_line}")
+                    
+                    # CapaUtilization과 동일: Max_line이 0이면 제조동 전체 사용 불가
+                    if pd.notna(max_line) and max_line == 0:
+                        print(f"[DEBUG] ❌ 제조동 {factory}의 Max_line이 0 → 모든 라인 사용 불가")
+                        return 0
+                
+                # 2. Max_qty 제약 확인 - 최우선 체크
+                max_qty_key = f'Max_qty_{factory}'
+                max_qty_rows = self.capa_qty_data[self.capa_qty_data['Line'] == max_qty_key]
+                
+                if not max_qty_rows.empty and time in max_qty_rows.columns:
+                    max_qty = max_qty_rows.iloc[0][time]
+                    print(f"[DEBUG] Max_qty_{factory} = {max_qty}")
+                    
+                    # CapaUtilization과 동일: Max_qty가 0이면 제조동 전체 사용 불가
+                    if pd.notna(max_qty) and max_qty == 0:
+                        print(f"[DEBUG] ❌ 제조동 {factory}의 Max_qty가 0 → 모든 라인 사용 불가")
+                        return 0
+            
+            # 🔧 3. 제조동 제약을 통과한 경우에만 개별 라인 용량 확인
+            print(f"[DEBUG] 제조동 제약 통과 → 개별 라인 용량 확인")
+
+            # 개별 라인의 기본 용량 확인
+            basic_capacity = None
             if 'Line' in self.capa_qty_data.columns and time in self.capa_qty_data.columns:
                 line_rows = self.capa_qty_data[self.capa_qty_data['Line'] == line]
                 if not line_rows.empty:
                     capacity = line_rows.iloc[0][time]
                     if pd.notna(capacity):
-                        return float(capacity)
+                        basic_capacity = float(capacity)
+                        print(f"[DEBUG] 개별 라인 기본 용량: {basic_capacity}")
+
+            # 기본 용량이 없으면 None 반환
+            if basic_capacity is None:
+                print(f"[DEBUG] 개별 라인 용량 정보 없음 → None 반환")
+                return None
             
-            # 제조동 제약 확인 (I, D, K, M)
+            # 🔧 3. 추가 제조동 제약 적용 (라인 수 제한 및 수량 제한)
             if len(line) >= 1:
                 factory = line[0]  # 라인 코드의 첫 글자 (예: 'I'_01 -> 'I')
                 
-                # 최대 라인 수 제약 확인
-            max_line_key = f'Max_line_{factory}'
-            max_line_rows = self.capa_qty_data[self.capa_qty_data['Line'] == max_line_key]
-            
-            if not max_line_rows.empty and time in max_line_rows.columns:
-                max_line = max_line_rows.iloc[0][time]
+                # 3-1. Max_line 제약: 사용 가능한 라인 수 제한
+                max_line_key = f'Max_line_{factory}'
+                max_line_rows = self.capa_qty_data[self.capa_qty_data['Line'] == max_line_key]
+                if not max_line_rows.empty and time in max_line_rows.columns:
+                    max_line = max_line_rows.iloc[0][time]
+        
+                    # 해당 제조동의 모든 라인 찾기
+                    factory_lines = self.capa_qty_data[
+                        self.capa_qty_data['Line'].str.startswith(f'{factory}_', na=False)
+                    ]
                 
-                if pd.notna(max_line) and max_line == 0:
-                    return 0
+                    # 생산능력 기준으로 라인 정렬 (내림차순)
+                    line_capacities = []
+                    for l_idx, l_row in factory_lines.iterrows():
+                        l_name = l_row['Line']
+                        if time in self.capa_qty_data.columns:
+                            capacity = self.capa_qty_data.loc[l_idx, time]
+                            if pd.notna(capacity):
+                                line_capacities.append((l_name, float(capacity)))
                     
-                # 해당 제조동의 모든 라인 찾기
-                factory_lines = self.capa_qty_data[
-                    self.capa_qty_data['Line'].str.startswith(f'{factory}_', na=False)
-                ]
+                    line_capacities.sort(key=lambda x: x[1], reverse=True)
+                    print(f"[DEBUG] 제조동 {factory} 라인들 (용량순): {line_capacities}")
                 
-                # 생산능력 기준으로 라인 정렬 (내림차순)
-                line_capacities = []
-                for l_idx, l_row in factory_lines.iterrows():
-                    l_name = l_row['Line']
-                    if time in self.capa_qty_data.columns:
-                        capacity = self.capa_qty_data.loc[l_idx, time]
-                        if pd.notna(capacity):
-                            line_capacities.append((l_name, float(capacity)))
+                    # 상위 N개 라인만 사용 가능
+                    usable_lines = [l for l, _ in line_capacities[:int(max_line)]]
+                    print(f"[DEBUG] 사용 가능한 라인들 (상위 {int(max_line)}개): {usable_lines}")
+                    
+                    # 현재 라인이 사용 가능한 라인 목록에 없으면 용량 0 반환
+                    if line not in usable_lines:
+                        print(f"[DEBUG] ❌ 라인 {line}이 사용 가능 목록에 없음 → 용량 0 반환")
+                        return 0
                 
-                line_capacities.sort(key=lambda x: x[1], reverse=True)
-                
-                # 상위 N개 라인만 사용 가능
-                usable_lines = [l for l, _ in line_capacities[:int(max_line)]]
-                
-                # 현재 라인이 사용 가능한 라인 목록에 없으면 용량 0 반환
-                if line not in usable_lines:
-                    return 0
-                
-                 # 최대 수량 제약
+                # 3-2. Max_qty 제약: 제조동 전체 수량 제한
+                max_qty_key = f'Max_qty_{factory}'
                 max_qty_rows = self.capa_qty_data[self.capa_qty_data['Line'] == f'Max_qty_{factory}']
+                
                 if not max_qty_rows.empty and time in max_qty_rows.columns:
                     max_qty = max_qty_rows.iloc[0][time]
 
-                    # 여기서 추가: max_qty가 0인 경우 즉시 0 반환
-                    if pd.notna(max_qty) and max_qty == 0:
-                        print(f"제조동 {factory}의 Max_qty가 0으로 설정됨: 생산 능력 0")
-                        return 0
-                    
-                    # 최대 수량 제약이 있는 경우
-                    if pd.notna(max_qty):
-                        # 현재 할당량 계산
-                        factory_allocation = self.get_factory_allocation(factory, time)
+                    if pd.notna(max_qty) and max_qty != float('inf'):
+                        # 현재 제조동 할당량 계산
+                        current_factory_allocation = self.get_factory_allocation(factory, time)
+                        print(f"[DEBUG] 제조동 현재 할당량: {current_factory_allocation}")
                         
-                        # 현재 라인의 용량
-                        line_capacity = 0
-                        line_rows = self.capa_qty_data[self.capa_qty_data['Line'] == line]
-                        if not line_rows.empty and time in line_rows.columns:
-                            capacity = line_rows.iloc[0][time]
-                            if pd.notna(capacity):
-                                line_capacity = float(capacity)
+                        # 남은 용량 계산
+                        remaining_capacity = max(0, float(max_qty) - current_factory_allocation)
+                        print(f"[DEBUG] 제조동 남은 용량: {remaining_capacity}")
                         
-                        # 용량 제한 계산
-                        remaining_capacity = max(0, float(max_qty) - factory_allocation)
-                        return min(line_capacity, remaining_capacity)
+                        # 개별 라인 용량과 제조동 남은 용량 중 최소값
+                        final_capacity = min(basic_capacity, remaining_capacity)
+                        print(f"[DEBUG] 최종 용량: min({basic_capacity}, {remaining_capacity}) = {final_capacity}")
+                        return final_capacity
+            # 제조동 제약이 없거나 적용되지 않는 경우 기본 용량 반환
+            print(f"[DEBUG] ✅ 최종 용량 (기본): {basic_capacity}")
+            return basic_capacity
         
         except Exception as e:
             print(f"라인 용량 확인 중 오류 발생: {str(e)}")
         
-        # 용량 정보를 찾지 못한 경우
-        return None
+            # 용량 정보를 찾지 못한 경우
+            return None
     
 
     """

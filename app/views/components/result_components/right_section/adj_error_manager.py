@@ -26,6 +26,8 @@ class AdjErrorManager():
         # 에러 저장소
         self.validation_errors = {}
 
+        self.update_error_display()
+
     """
     에러 관리
     """

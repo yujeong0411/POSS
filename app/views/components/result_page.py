@@ -62,9 +62,9 @@ class ResultPage(QWidget):
         self.viz_canvases = []
 
         self.init_ui()
-        print("\n==== ResultPage: connect_signals 호출 시작 ====")
         self.connect_signals()
         print("==== ResultPage: connect_signals 호출 완료 ====\n")
+        
 
     def init_ui(self):
         bold_font = font_manager.get_just_font("SamsungSharpSans-Bold").family()

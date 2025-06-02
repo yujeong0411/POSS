@@ -9,4 +9,4 @@ class MplCanvas(FigureCanvas):
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = self.fig.add_subplot(111)
         super(MplCanvas, self).__init__(self.fig)
-        self.fig.tight_layout()  
+        # self.fig.tight_layout()  

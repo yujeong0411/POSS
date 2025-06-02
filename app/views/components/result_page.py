@@ -511,100 +511,141 @@ class ResultPage(QWidget):
     데이터프레임을 분석하여 시각화 업데이트
     """
     def on_data_changed(self, data):
-        print("on_data_changed 호출됨 - 데이터 변경 감지")
-        self.result_data = data
+        """
+        데이터가 변경되었을 때 호출되는 메서드
+        데이터프레임을 분석하여 시각화 업데이트
+        """
+        # *** 중복 호출 방지 1: 초기화 중이면 스킵 ***
+        if hasattr(self, '_initializing') and self._initializing:
+            print("초기화 중이므로 on_data_changed 처리 방지")
+            return
 
-        # 위젯 참조가 없으면 다시 설정
-        if self.plan_maintenance_widget is None:
-            self._setup_widget_references()
+        # *** 중복 호출 방지 2: 파일 로딩 중이면 스킵 ***
+        if hasattr(self, '_loading_file') and self._loading_file:
+            print("파일 로딩 중이므로 on_data_changed 처리 방지")
+            return
 
-        # 자재 부족 분석
+        # *** 중복 호출 방지 3: 이미 처리 중이면 스킵 ***
+        if hasattr(self, '_processing_data_change') and self._processing_data_change:
+            print("이미 데이터 변경 처리 중 - 중복 방지")
+            return
+
+        # *** 중복 호출 방지 4: 동일한 데이터면 스킵 ***
         if data is not None and not data.empty:
-            print("데이터 로드 후 자재 부족 분석 시행")
-            if hasattr(self, 'material_widget') and self.material_widget:
-                self.material_widget.run_analysis(data)
-                self.material_analyzer = self.material_widget.get_material_analyzer()
-            else:
-                try:
-                    if not hasattr(self, 'material_analyzer') or self.material_analyzer is None:
-                        self.material_analyzer = MaterialShortageAnalyzer()
-                    self.material_analyzer.analyze_material_shortage(data)
-                except Exception as e:
-                    print(f"초기 자재 부족 분석 중 오류 :{e}")
+            import hashlib
+            current_hash = hashlib.md5(str(data.values.tolist()).encode()).hexdigest()
+            if hasattr(self, '_last_processed_data_hash') and self._last_processed_data_hash == current_hash:
+                print("동일한 데이터 - 중복 처리 방지")
+                return
+            self._last_processed_data_hash = current_hash
 
-        # 상태 업데이트
-        if self.pre_assigned_items:
-            self.update_left_widget_pre_assigned_status(self.pre_assigned_items)
-        if self.material_analyzer and self.material_analyzer.shortage_results:
-            self.update_left_widget_shortage_status(self.material_analyzer.shortage_results)
-        if hasattr(self.left_section, 'shipment_failure_items') and self.left_section.shipment_failure_items:
-            self.left_section.apply_shipment_failure_status()
+        # *** 처리 시작 플래그 설정 ***
+        self._processing_data_change = True
 
         try:
+            print("on_data_changed 호출됨 - 데이터 변경 감지")
+            self.result_data = data
+
+            # 위젯 참조가 없으면 다시 설정
+            if self.plan_maintenance_widget is None:
+                self._setup_widget_references()
+
+            # 자재 부족 분석
             if data is not None and not data.empty:
-                # kpi 업데이트
-                self.update_kpi_scores() 
-                self._refresh_base_kpi()  # 조정여부 확인
-
-                # 계획 유지율 업데이트
-                if self.plan_maintenance_widget:
-                    start_date, end_date = self.main_window.data_input_page.date_selector.get_date_range()
-                    self.plan_maintenance_widget.set_data(data, start_date, end_date)
-
-                # 할당 업데이트
-                if self.split_allocation_widget:
-                    self.split_allocation_widget.run_analysis(data)
-
-                # 요약 업데이트
-                if self.summary_widget:
-                    self.summary_widget.run_analysis(data)
-
-                # === 핵심: 비교차트 조건 분기 ===
-                has_user_adjustments = False
-                if self.controller and hasattr(self.controller, 'model'):
-                    original_df = self.controller.model._original_df  # 원본 데이터
-                    current_df = self.controller.model._df  # 현재(조정된) 데이터
-                    
-                    if original_df is not None and current_df is not None:
-                        # 주요 컬럼 비교로 조정 여부 확인
-                        key_columns = ['Line', 'Time', 'Item', 'Qty']
-                        for col in key_columns:
-                            if col in original_df.columns and col in current_df.columns:
-                                if not original_df[col].equals(current_df[col]):
-                                    has_user_adjustments = True
-                                    print(f"시각화 업데이트: 조정 감지 - '{col}' 컬럼 변경됨")
-                                    break
-                
-                # 조정 여부에 따라 시각화 데이터 설정
-                if has_user_adjustments:
-                    if self.controller and self.controller.model:
-                        comparison_df = self.controller.model.get_comparison_dataframe()
-                        
-                        if comparison_df and 'original' in comparison_df and 'adjusted' in comparison_df:
-                            self.capa_ratio_data = {
-                                'original': CapaRatioAnalyzer.analyze_capa_ratio(comparison_df['original']),
-                                'adjusted': CapaRatioAnalyzer.analyze_capa_ratio(comparison_df['adjusted'])
-                            }
-                            self.utilization_data = {
-                                'original': CapaUtilization.analyze_utilization(comparison_df['original']),
-                                'adjusted': CapaUtilization.analyze_utilization(comparison_df['adjusted'])
-                            }
+                print("데이터 로드 후 자재 부족 분석 시행")
+                if hasattr(self, 'material_widget') and self.material_widget:
+                    self.material_widget.run_analysis(data)
+                    self.material_analyzer = self.material_widget.get_material_analyzer()
                 else:
-                    self.capa_ratio_data = CapaRatioAnalyzer.analyze_capa_ratio(data_df=data, is_initial=True)
-                    self.utilization_data = CapaUtilization.analyze_utilization(data)
+                    try:
+                        if not hasattr(self, 'material_analyzer') or self.material_analyzer is None:
+                            self.material_analyzer = MaterialShortageAnalyzer()
+                        self.material_analyzer.analyze_material_shortage(data)
+                    except Exception as e:
+                        print(f"초기 자재 부족 분석 중 오류 :{e}")
 
-                # 시각화 갱신
-                self.update_all_visualizations()
+            # 상태 업데이트
+            if self.pre_assigned_items:
+                self.update_left_widget_pre_assigned_status(self.pre_assigned_items)
+            if self.material_analyzer and self.material_analyzer.shortage_results:
+                self.update_left_widget_shortage_status(self.material_analyzer.shortage_results)
+            if hasattr(self.left_section, 'shipment_failure_items') and self.left_section.shipment_failure_items:
+                self.left_section.apply_shipment_failure_status()
 
-            else:
-                print("빈 데이터프레임")
-                self.capa_ratio_data = {}
-                self.utilization_data = {}
+            try:
+                if data is not None and not data.empty:
+                    # kpi 업데이트
+                    self.update_kpi_scores()
+                    self._refresh_base_kpi()  # 조정여부 확인
+
+                    # 계획 유지율 업데이트
+                    if self.plan_maintenance_widget:
+                        start_date, end_date = self.main_window.data_input_page.date_selector.get_date_range()
+                        self.plan_maintenance_widget.set_data(data, start_date, end_date)
+
+                    # 할당 업데이트
+                    if self.split_allocation_widget:
+                        self.split_allocation_widget.run_analysis(data)
+
+                    # 요약 업데이트
+                    if self.summary_widget:
+                        self.summary_widget.run_analysis(data)
+
+                    # === 핵심: 비교차트 조건 분기 ===
+                    has_user_adjustments = False
+                    if self.controller and hasattr(self.controller, 'model'):
+                        original_df = self.controller.model._original_df  # 원본 데이터
+                        current_df = self.controller.model._df  # 현재(조정된) 데이터
+
+                        if original_df is not None and current_df is not None:
+                            # 주요 컬럼 비교로 조정 여부 확인
+                            key_columns = ['Line', 'Time', 'Item', 'Qty']
+                            for col in key_columns:
+                                if col in original_df.columns and col in current_df.columns:
+                                    if not original_df[col].equals(current_df[col]):
+                                        has_user_adjustments = True
+                                        print(f"시각화 업데이트: 조정 감지 - '{col}' 컬럼 변경됨")
+                                        break
+
+                    # 조정 여부에 따라 시각화 데이터 설정
+                    if has_user_adjustments:
+                        if self.controller and self.controller.model:
+                            comparison_df = self.controller.model.get_comparison_dataframe()
+
+                            if comparison_df and 'original' in comparison_df and 'adjusted' in comparison_df:
+                                self.capa_ratio_data = {
+                                    'original': CapaRatioAnalyzer.analyze_capa_ratio(comparison_df['original']),
+                                    'adjusted': CapaRatioAnalyzer.analyze_capa_ratio(comparison_df['adjusted'])
+                                }
+                                self.utilization_data = {
+                                    'original': CapaUtilization.analyze_utilization(comparison_df['original']),
+                                    'adjusted': CapaUtilization.analyze_utilization(comparison_df['adjusted'])
+                                }
+                    else:
+                        self.capa_ratio_data = CapaRatioAnalyzer.analyze_capa_ratio(data_df=data, is_initial=True)
+                        self.utilization_data = CapaUtilization.analyze_utilization(data)
+
+                    # 시각화 갱신
+                    self.update_all_visualizations()
+
+                else:
+                    print("빈 데이터프레임")
+                    self.capa_ratio_data = {}
+                    self.utilization_data = {}
+
+            except Exception as e:
+                print(f"데이터 분석 중 오류 발생: {e}")
+                import traceback
+                traceback.print_exc()
 
         except Exception as e:
-            print(f"데이터 분석 중 오류 발생: {e}")
+            print(f"on_data_changed 처리 중 전체 오류: {e}")
             import traceback
             traceback.print_exc()
+
+        finally:
+            # *** 처리 완료 플래그 해제 ***
+            self._processing_data_change = False
     
 
     """
@@ -1189,27 +1230,60 @@ class ResultPage(QWidget):
         bool: 로드 성공 여부
     """
     def load_result_file(self, file_path=None):
+        """
+        결과 파일 로드 및 MVC 구조 초기화
+
+        Args:
+            file_path: 선택적으로 파일 경로를 직접 전달 가능
+        Returns:
+            bool: 로드 성공 여부
+        """
         # 파일 선택 (경로가 전달되지 않은 경우)
         if file_path is None:
             file_path, _ = QFileDialog.getOpenFileName(
                 self, "결과 파일 선택", "", "Excel Files (*.xlsx *.xls *.csv)"
             )
-        
+
         if not file_path or not os.path.exists(file_path):
             print(f"유효한 파일 경로가 아닙니다: {file_path}")
             return False
-        
+
         try:
             print(f"[INFO] 결과 파일 로드 시작: {file_path}")
-            
+
+            # *** 중복 처리 방지: 초기화 플래그 설정 ***
+            self._initializing = True
+            self._loading_file = True
+
             # 기존 데이터 정리
             if hasattr(self, 'left_section'):
                 self.left_section.clear_all_items()
-            
+
+            # 마스터 파일 경로 자동 설정 (같은 폴더에서 찾기)
+            result_dir = os.path.dirname(file_path)
+
+            # 마스터 파일 찾기
+            possible_master_files = ['master.xlsx', 'Master.xlsx', 'MASTER.xlsx', 'master_data.xlsx']
+            for master_file in possible_master_files:
+                master_path = os.path.join(result_dir, master_file)
+                if os.path.exists(master_path):
+                    FilePaths.set("master_excel_file", master_path)
+                    print(f"[INFO] 마스터 파일 자동 설정: {master_path}")
+                    break
+
+            # 디맨드 파일 찾기
+            possible_demand_files = ['demand.xlsx', 'Demand.xlsx', 'DEMAND.xlsx', 'demand_data.xlsx']
+            for demand_file in possible_demand_files:
+                demand_path = os.path.join(result_dir, demand_file)
+                if os.path.exists(demand_path):
+                    FilePaths.set("demand_excel_file", demand_path)
+                    print(f"[INFO] 디맨드 파일 자동 설정: {demand_path}")
+                    break
+
             # 파일 로드
             from app.utils.fileHandler import load_file
             result_data = load_file(file_path)
-            
+
             # 여러 시트가 반환되면 첫 번째 시트 사용
             if isinstance(result_data, dict):
                 if 'result' in result_data:
@@ -1219,21 +1293,21 @@ class ResultPage(QWidget):
                     first_sheet_name = list(result_data.keys())[0]
                     result_data = result_data[first_sheet_name]
                     print(f"[INFO] '{first_sheet_name}' 시트 데이터 사용")
-            
+
             # DataFrame이 아니면 변환
             if not isinstance(result_data, pd.DataFrame):
                 print("[ERROR] 데이터를 DataFrame으로 변환할 수 없습니다.")
                 EnhancedMessageBox.show_validation_error(
-                    self, 
-                    "파일 형식 오류", 
+                    self,
+                    "파일 형식 오류",
                     "파일에서 유효한 데이터를 찾을 수 없습니다."
                 )
                 return False
-            
+
             # 데이터 검증 - 필수 컬럼 확인
             required_columns = ['Line', 'Time', 'Item']
             missing_columns = [col for col in required_columns if col not in result_data.columns]
-            
+
             if missing_columns:
                 EnhancedMessageBox.show_validation_error(
                     self,
@@ -1241,33 +1315,33 @@ class ResultPage(QWidget):
                     f"필수 열이 없습니다: {', '.join(missing_columns)}\n올바른 형식의 파일을 선택해주세요."
                 )
                 return False
-            
+
             # 데이터 타입 정규화
             try:
                 if 'Line' in result_data.columns:
                     result_data['Line'] = result_data['Line'].astype(str)
-                
+
                 if 'Time' in result_data.columns:
                     result_data['Time'] = pd.to_numeric(result_data['Time'], errors='coerce').fillna(0).astype(int)
-                
+
                 if 'Item' in result_data.columns:
                     result_data['Item'] = result_data['Item'].astype(str)
-                
+
                 if 'Qty' in result_data.columns:
                     result_data['Qty'] = pd.to_numeric(result_data['Qty'], errors='coerce').fillna(0).astype(int)
             except Exception as e:
                 print(f"[WARNING] 데이터 타입 변환 중 오류: {e}")
-            
+
             # 파일 경로 저장
             FilePaths.set("result_file", file_path)
-            
+
             # MVC 구조 초기화
             print("[INFO] MVC 구조 초기화 시작")
-            
+
             # 1. 검증기(Validator) 생성
-            validator = PlanAdjustmentValidator(result_data,self)
+            validator = PlanAdjustmentValidator(result_data, self)
             print("[INFO] 검증기 생성 완료")
-            
+
             # 2. 사전할당 아이템 식별
             pre_assigned_items = set()
             if 'Type' in result_data.columns:
@@ -1275,40 +1349,41 @@ class ResultPage(QWidget):
                 if pre_assigned_mask.any():
                     pre_assigned_items = set(result_data.loc[pre_assigned_mask, 'Item'].unique())
                     print(f"[INFO] {len(pre_assigned_items)}개 사전할당 아이템 발견")
-            
+
             # 3. 모델(Model) 생성
             model = AssignmentModel(result_data, list(pre_assigned_items), validator)
             print("[INFO] 모델 생성 완료")
-            
+
             # 4. 컨트롤러(Controller) 생성
             controller = AdjustmentController(model, self.left_section, self.error_manager)
             print("[INFO] 컨트롤러 생성 완료")
-            
+
             # 5. 컨트롤러에 ResultPage 참조 설정
             controller.set_result_page(self)
-            
+
             # 6. 클래스 변수에 컨트롤러 저장
             self.controller = controller
-            
+
             # 7. Left Section에 validator와 controller 설정
             self.left_section.set_validator(validator)
             self.left_section.set_controller(controller)
             print("[INFO] 검증기 및 컨트롤러 설정 완료")
-            
-            # 8. 초기 데이터 설정
+
+            # 8. 초기 데이터 설정 (시그널 발생 방지 상태에서)
             controller.initialize_views()
             print("[INFO] 초기 데이터 설정 완료")
-            
-            # 9. 시그널 연결
+
+            # 9. 시그널 연결 (초기화 후 마지막에 수행)
+            print("[INFO] 시그널 연결 시작")
             controller.connect_signals()
             print("[INFO] 시그널 연결 완료")
-            
+
             # 10. 사전할당 상태 설정
             self.pre_assigned_items = pre_assigned_items
             if pre_assigned_items:
                 self.update_left_widget_pre_assigned_status(pre_assigned_items)
                 print(f"[INFO] {len(pre_assigned_items)}개 사전할당 아이템 상태 설정")
-            
+
             # 11. 자재 부족 분석 실행
             try:
                 if hasattr(self, 'material_widget') and self.material_widget:
@@ -1317,28 +1392,39 @@ class ResultPage(QWidget):
                     print("[INFO] 자재 부족 분석 완료")
             except Exception as e:
                 print(f"[WARNING] 자재 부족 분석 중 오류: {e}")
-            
+
+            # *** 초기화 플래그 해제 ***
+            self._initializing = False
+            self._loading_file = False
+
             # 성공 메시지 표시
             EnhancedMessageBox.show_validation_success(
                 self,
                 "File Loaded Successfully",
-                 f"File has been successfully loaded.\nRows: {result_data.shape[0]}, Columns: {result_data.shape[1]}"
+                f"File has been successfully loaded.\nRows: {result_data.shape[0]}, Columns: {result_data.shape[1]}"
             )
-            
-            # 데이터 변경 이벤트 발생
+
+            # *** 단 한 번만 데이터 변경 이벤트 발생 ***
+            print("[INFO] 최종 데이터 변경 이벤트 발생")
             if hasattr(self, 'on_data_changed'):
                 self.on_data_changed(result_data)
-            
+
             print("[INFO] 파일 로드 및 MVC 초기화 완료")
             return True
-            
+
         except Exception as e:
+            # 오류 발생 시 플래그 해제
+            if hasattr(self, '_initializing'):
+                self._initializing = False
+            if hasattr(self, '_loading_file'):
+                self._loading_file = False
+
             import traceback
             traceback.print_exc()
-            
+
             EnhancedMessageBox.show_validation_error(
                 self,
-                "File Loding Error", 
+                "File Loding Error",
                 f"An error occurred while loading the file.\n{str(e)}"
             )
             return False

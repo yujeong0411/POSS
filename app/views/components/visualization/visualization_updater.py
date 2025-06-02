@@ -56,7 +56,7 @@ class VisualizationUpdater:
             'transform_data': None,
             'extra_params': {
                 'show_value': True,
-                'value_fontsize': 14,
+                'value_fontsize': 11,
                 'show_legend': is_comparison,
                 'ylim': None,
                 'show_thresholds': True,
@@ -95,7 +95,7 @@ class VisualizationUpdater:
                 'threshold_colors': ['#4CAF50', '#FFC107', '#F44336'],
                 'threshold_labels': ['Good', 'Warning', 'High'],
                 'show_value': True,
-                'value_fontsize': 14,
+                'value_fontsize': 11,
                 'show_legend': is_comparison,
                 # 요일 데이터는 고정된 순서를 유지해야 하므로 정렬 비활성화
                 'sort_data': False

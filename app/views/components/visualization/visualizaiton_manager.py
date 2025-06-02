@@ -219,7 +219,7 @@ class VisualizationManager:
             bottom_margin = 0.30 if any(len(str(x)) > 10 for x in x_data) else 0.20
 
             # 임계선이 있는 경우 약간 더 넓게
-            right_margin = 0.85 if 'threshold_values' in kwargs else 0.95
+            right_margin = 0.9 if 'threshold_values' in kwargs else 0.9
 
             ax.figure.subplots_adjust(
                 left=0.15,  # 왼쪽 여백

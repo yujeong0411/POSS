@@ -102,12 +102,13 @@ class VisualizationUpdater:
                 'ylim': (0, 110),
                 'threshold_values': [80, 100, 110],
                 'threshold_colors': ['#4CAF50', '#FFC107', '#F44336'],
-                'threshold_labels': ['Good', 'Warning', 'High'],
+                'threshold_labels': ['Good', 'Warn', 'High'],
                 'show_value': True,
-                'value_fontsize': 5,
+                'value_fontsize': 7,
                 'show_legend': is_comparison,
                 # 요일 데이터는 고정된 순서를 유지해야 하므로 정렬 비활성화
-                'sort_data': False
+                'sort_data': False,
+                'width' : 0.8
             }
         }
 

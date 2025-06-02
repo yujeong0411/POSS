@@ -337,11 +337,8 @@ class ResultPage(QWidget):
         self.result_data = df
         
         # 각 위젯에 결과만 적용
-        self._apply_kpi_results(analysis_results.get('kpi', {}))
         self._apply_material_results(analysis_results.get('material', {}))
         self._apply_shipment_results(analysis_results.get('shipment', {}))
-        self._apply_visualization_results(analysis_results)
-    
 
     """
     자재 결과 적용 - 분석 없음
@@ -353,7 +350,7 @@ class ResultPage(QWidget):
             # Left Section에 결과만 전달
             if hasattr(self, 'left_section'):
                 shortage_results = material_results.get('shortage_results', {})
-                self.left_section.apply_shortage_status(shortage_results)
+                self.left_section.set_current_shortage_items(shortage_results)
     
     """
     출하 결과 적용 - 분석 없음
@@ -375,7 +372,6 @@ class ResultPage(QWidget):
             
             # 상태 저장
             self._last_shipment_failures = failure_items
-
 
     """
     분석 결과로 위젯 업데이트 - 재분석 없음

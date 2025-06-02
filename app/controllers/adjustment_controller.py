@@ -2,7 +2,6 @@ from PyQt5.QtCore import QObject, QTimer
 from typing import Any, Dict
 import uuid
 import pandas as pd
-from app.utils.item_key_manager import ItemKeyManager
 from app.views.components.result_components.manager.analysis_manager import AnalysisManager
 
 """
@@ -33,7 +32,7 @@ class AdjustmentController(QObject):
     def set_result_page(self, result_page):
         self.result_page = result_page
 
-         # 🔧 분석 매니저에 모든 분석 위임
+         # 분석 매니저에 모든 분석 위임
         self.analysis_manager = AnalysisManager(result_page, controller=self)
         print("Controller: 분석 매니저 초기화 완료")
 
@@ -82,33 +81,26 @@ class AdjustmentController(QObject):
         
         # Model -> Controller (핵심 시그널)
         self.model.modelDataChanged.connect(self._on_model_change)   # 전체 재구성이 필요한 경우만
-        print("Controller: modelDataChanged 시그널 연결")
         self.model.validationFailed.connect(self.error_manager.add_validation_error)
-        print("Controller: 에러 매니저 시그널 연결")
         self.model.dataModified.connect(self.on_data_modified)
-        print("Controller: dataModified 시그널 연결")
         
         # View -> Controller (아이템 데이터 변경)
         if hasattr(self.view, 'itemModified'):
-            print("Controller: itemModified 시그널 연결")
             self.view.itemModified.connect(self._on_item_data_changed)
 
         # View -> Controller (아이템 삭제, 복사)
         if hasattr(self.view, 'grid_widget'):
             if hasattr(self.view.grid_widget, 'itemCopied'):
-                print("Controller: itemCopied 시그널 연결")
                 self.view.grid_widget.itemCopied.connect(self.on_item_copied)
 
         # 연결 완료 상태 설정
         self._signals_connected = True        
-        print("Controller: 시그널 연결 완료")
         return True
     
     """
     모델 변경 시 - 분석 + UI 업데이트 통합 처리
     """
     def _on_model_change(self):
-        print("Controller: 모델 변경 감지 → 분석 + UI 업데이트")
         
         df = self.model.get_dataframe()
         
@@ -123,8 +115,7 @@ class AdjustmentController(QObject):
         
         # Error Manager 업데이트
         self.error_manager.update_error_display()
-        
-        print("Controller: UI 업데이트 완료")
+
 
     """
     아이템 데이터 변경 처리 → Model로 전달
@@ -143,12 +134,10 @@ class AdjustmentController(QObject):
         
         # Line/Time 변경 = 이동
         if changed_fields and ('Line' in changed_fields or 'Time' in changed_fields):
-                print(f"Controller: 아이템 이동 {code}")
 
                 # 이전 위치 정보 가져오기
                 old_line = changed_fields.get('Line', {}).get('from', line)
                 old_time = changed_fields.get('Time', {}).get('from', time)
-                print(f"이전 위치정보: 라인-{old_line} / 타임-{old_time}")
 
                 self.model.move_item(code, old_line, old_time, line, time, item_id)
                 return
@@ -156,7 +145,6 @@ class AdjustmentController(QObject):
         # 수량 변경 - 라인과 시간 정보도 함께 전달
         elif 'Qty' in new_data and line and time is not None:
             qty = new_data['Qty']
-            print(f"Controller: 수량 변경 {code} @ {line}-{time} -> {qty}")
             # 수정된 모델의 update_qty 메서드 호출 (라인, 시간 포함)
             self.model.update_qty(code, line, time, qty, item_id)
 
@@ -176,8 +164,6 @@ class AdjustmentController(QObject):
             old_time = old_data.get('Time')
             new_line = new_data.get('Line')
             new_time = new_data.get('Time')
-
-            print(f"Controller: 셀 이동 {code} @ {old_line}-{old_time} -> {new_line}-{new_time}")
 
             self.model.move_item(code, old_line, old_time, new_line, new_time, item_id)
 
@@ -215,40 +201,8 @@ class AdjustmentController(QObject):
             
         # 모델에 명시적으로 추가 - 기본적으로 수량은 0으로 설정
         qty = data.get('Qty', 0)
-        success = self.model.add_new_item(code, line, time, qty, data)
-    
-        if success:
-            print(f"Controller: 복사된 아이템 모델 등록 완료 - {code} @ {line}-{time}")
-        else:
-            print(f"Controller: 복사된 아이템 모델 등록 실패 - {code} @ {line}-{time}")
+        self.model.add_new_item(code, line, time, qty, data)
 
-
-    # """
-    # 삭제된 아이템 처리 → Model로 전달
-    # """
-    # def on_item_deleted(self, item_or_id):
-    #     print("DEBUG: AdjustmentController.on_item_deleted 호출됨")
-
-    #     # item_or_id가 문자열(ID)인 경우
-    #     if isinstance(item_or_id, str):
-    #         item_id = item_or_id
-    #         print(f"DEBUG: ID로 삭제: {item_id}")
-    #         return self.model.delete_item_by_id(item_id)
-
-    #     if hasattr(item_or_id, 'item_data') and item_or_id.item_data:
-    #         # ID가 있으면 ID 기반으로 삭제
-    #         item_id = ItemKeyManager.extract_item_id(item_or_id)
-    #         if item_id:
-    #             print(f"컨트롤러: 아이템 삭제 처리 - ID: {item_id}")
-    #             return self.model.delete_item_by_id(item_id)
-            
-    #         # # ID가 없으면 Line/Time/Item 기반으로 삭제
-    #         line, time, item_code = ItemKeyManager.get_item_from_data(item_or_id.item_data)
-    #         if line is not None and time is not None and item_code is not None:
-    #             print(f"컨트롤러: 아이템 삭제 처리 - {item_code} @ {line}-{time}")
-    #             return self.model.delete_item(item_code, line, time)
-        
-    #     return 
     
     """
     아이템 추가 - UI에 해당 아이템만 추가 (전체 재구성 없음)
@@ -272,7 +226,6 @@ class AdjustmentController(QObject):
         item_id = new_data.get('_id')
         if item_id:
             QTimer.singleShot(200, lambda: self._ensure_item_visible(item_id))
-            print(f"셀 이동 후 스크롤 예약됨: ID={item_id}")
 
         # 2. 분석 실행
         self._run_complete_analysis("아이템 이동")
@@ -281,7 +234,7 @@ class AdjustmentController(QObject):
     수량 변경 - UI에서 해당 아이템 텍스트만 업데이트 (전체 재구성 없음)
     """
     def _on_quantity_updated(self, item_data):
-        print(f"*** Controller: quantityUpdated 시그널 수신됨! ***")
+        print(f"Controller: quantityUpdated 시그널 수신됨!")
         
         # 1. UI 업데이트
         self._update_item_ui_immediately(item_data)
@@ -295,15 +248,8 @@ class AdjustmentController(QObject):
     """
     def _on_item_deleted(self, item_id):
         print(f"Controller: 아이템 삭제 - ID: {item_id}")
-        
-        # # 1. UI에서 아이템 제거
-        # item_widget = self._find_item_widget_by_id(item_id)
-        # if item_widget:
-        #     container = item_widget.parent()
-        #     if container:
-        #         container.remove_item(item_widget)
-        
-        # 2. 완전한 분석 
+    
+        # 완전한 분석 
         self._run_complete_analysis("아이템 삭제")
 
     """
@@ -343,19 +289,23 @@ class AdjustmentController(QObject):
         except Exception as e:
             print(f"UI 아이템 추가 중 오류: {e}")
 
+    """
+    UI만 즉시 업데이트 (분석 없음)
+    """
     def _update_item_ui_immediately(self, item_data):
-        """UI만 즉시 업데이트 (분석 없음)"""
         item_id = item_data.get('_id')
         if item_id:
             item_widget = self._find_item_widget_by_id(item_id)
             if item_widget:
                 item_widget.item_data.update(item_data)
                 item_widget.update_text_from_data()
-                print("✅ UI 텍스트 업데이트 완료")
+                print("UI 텍스트 업데이트 완료")
 
+    """
+    완전한 분석 - 모든 것을 한 번에
+    """
     def _run_complete_analysis(self, trigger_reason):
-        """완전한 분석 - 모든 것을 한 번에"""
-        print(f"🔄 완전한 분석 시작 - {trigger_reason}")
+        print(f"완전한 분석 시작 - {trigger_reason}")
         
         try:
             # 1. 현재 데이터로 전체 재분석
@@ -372,13 +322,15 @@ class AdjustmentController(QObject):
             # 4. 에러 상태 업데이트
             self.error_manager.update_error_display()
             
-            print("✅ 완전한 분석 완료")
+            print("완전한 분석 완료")
             
         except Exception as e:
-            print(f"❌ 분석 중 오류: {e}")
+            print(f"분석 중 오류: {e}")
 
+    """
+    분석 결과를 모든 UI에 적용
+    """
     def _apply_all_analysis_results(self, analysis_results):
-        """분석 결과를 모든 UI에 적용"""
         
         # 1. KPI 업데이트
         if 'kpi' in analysis_results and self.result_page:
@@ -387,7 +339,7 @@ class AdjustmentController(QObject):
                 base_scores=kpi_data.get('base_scores', {}),
                 adjust_scores=kpi_data.get('adjust_scores', {})
             )
-            print("📈 KPI 업데이트")
+            print("KPI 업데이트")
         
         # 2. 차트 데이터 설정
         if self.result_page:
@@ -398,19 +350,21 @@ class AdjustmentController(QObject):
             
             # 3. 모든 차트 업데이트
             self.result_page.update_all_visualizations()
-            print("📊 모든 차트 업데이트")
+            print("모든 차트 업데이트")
         
         # 4. 자재부족/출하실패 상태를 아이템에 적용
         self._apply_status_to_items(analysis_results)
     
+    """
+    분석 결과를 개별 아이템에 상태로 적용
+    """
     def _apply_status_to_items(self, analysis_results):
-        """분석 결과를 개별 아이템에 상태로 적용"""
         
         # 자재부족 상태 적용
         if 'material' in analysis_results and hasattr(self.view, 'set_current_shortage_items'):
             shortage_results = analysis_results['material'].get('shortage_results', {})
             self.view.set_current_shortage_items(shortage_results)
-            print("📦 자재부족 상태 적용")
+            print("자재부족 상태 적용")
         
         # 출하실패 상태 적용
         if 'shipment' in analysis_results and hasattr(self.view, 'set_shipment_failure_items'):
@@ -418,7 +372,7 @@ class AdjustmentController(QObject):
             if shipment_data.get('analyzed'):
                 failure_items = shipment_data.get('failure_items', {})
                 self.view.set_shipment_failure_items(failure_items)
-                print("🚢 출하실패 상태 적용")
+                print("출하실패 상태 적용")
 
     """
     전체 데이터 변경 - 전체 UI 재구성 필요 (리셋, 새 파일 로드 등)
@@ -448,8 +402,10 @@ class AdjustmentController(QObject):
             self.view._scroll_to_selected_item(item_id)
             print(f"아이템으로 스크롤 요청: ID={item_id}")
 
+    """
+    라인과 시간으로 컨테이너 위치 찾기
+    """
     def _find_container_position(self, line, time):
-        """라인과 시간으로 컨테이너 위치 찾기"""
         try:
             # 교대 계산
             shift = "Day" if int(time) % 2 == 1 else "Night"
@@ -553,7 +509,7 @@ class AdjustmentController(QObject):
         if hasattr(self.view, 'reset_button'):
             self.view.reset_button.setEnabled(has_changes)
 
-        """
+    """
     재 모델 데이터 반환
     """
     def get_current_data(self):

@@ -251,23 +251,20 @@ class ModifiedLeftSection(QWidget):
         self.legend_widget.filter_changed.connect(self.filter_manager.apply_legend_filters)
         print("[LeftSection] 매니저 시그널 연결 완료")
 
+    """
+    초기화 - 분석 결과와 함께 (MVC 전용)
+    """
     def initialize_with_data(self, df, analysis_results):
-        """🎯 초기화 - 분석 결과와 함께 (MVC 전용)"""
-        print("LeftSection: 분석 결과와 함께 초기화")
-        
         self.data = df
         self.original_data = df.copy()
         
         # UI 구성 : 아이템 생성
         self.update_ui_with_signals()
-        
-        # 분석 결과 적용 (재분석 없음)
-        # self._apply_analysis_results(analysis_results)
 
+    """
+    UI만 업데이트 - 분석 없음 (MVC 전용)
+    """
     def update_ui_only(self, df, analysis_results):
-        """🎯 UI만 업데이트 - 분석 없음 (MVC 전용)"""
-        print("LeftSection: UI만 업데이트 (분석 없음)")
-        
         # 스크롤 위치 저장
         scroll_position = self._save_scroll_position()
         
@@ -284,42 +281,6 @@ class ModifiedLeftSection(QWidget):
         # 스크롤 위치 복원
         if scroll_position:
             QTimer.singleShot(100, lambda: self._restore_scroll_position(scroll_position))
-
-    # def _apply_analysis_results(self, analysis_results):
-    #     """🎯 분석 결과만 적용 - 재분석 없음"""
-    #     if not analysis_results:
-    #         return
-        
-    #      # 사전할당 상태 적용
-    #     if hasattr(self, 'pre_assigned_items') and self.pre_assigned_items:
-    #         print(f"LeftSection: 사전할당 상태 적용 - {len(self.pre_assigned_items)}개 아이템")
-    #         self._apply_pre_assigned_status_to_items()
-        
-    #     # 자재 부족 결과 적용
-    #     if 'material' in analysis_results:
-    #         material_data = analysis_results['material']
-    #         if 'shortage_results' in material_data:
-    #             self.set_current_shortage_items(material_data['shortage_results'])
-        
-    #     # 출하 실패 결과 적용 (필요시)
-    #     if 'shipment' in analysis_results:
-    #         print("LeftSection: 출하 실패 상태 적용")
-    #         shipment_data = analysis_results['shipment']
-    #         if 'failure_items' in shipment_data:
-    #             self.set_shipment_failure_items(shipment_data['failure_items'])
-    #         elif shipment_data.get('analyzed'):
-    #             # 출하 분석이 완료되었으면 ResultPage에서 실패 정보 가져오기
-    #             if (hasattr(self, 'parent_page') and 
-    #                 self.parent_page and 
-    #                 hasattr(self.parent_page, 'shipment_widget') and
-    #                 self.parent_page.shipment_widget):
-                    
-    #                 # Shipment 위젯에서 실패 정보 가져오기
-    #                 failure_items = getattr(self.parent_page.shipment_widget, 'failure_items', {})
-    #                 if failure_items:
-    #                     self.set_shipment_failure_items(failure_items)
-
-    #     print("LeftSection: 분석 결과 적용 완료")
         
     """
     데이터프레임 타입 정규화
@@ -574,7 +535,7 @@ class ModifiedLeftSection(QWidget):
         row_ordered_results = []
         invalid_items = []
 
-        # *** 핵심 변경: 행 우선 순서로 아이템 수집 ***
+        # 행 우선 순서로 아이템 수집
         if hasattr(self.grid_widget, 'containers'):
             for row_idx, row_containers in enumerate(self.grid_widget.containers):
                 for col_idx, container in enumerate(row_containers):
@@ -606,7 +567,7 @@ class ModifiedLeftSection(QWidget):
             if item in self.all_items:
                 self.all_items.remove(item)
 
-        # *** 핵심 변경: 행 우선 정렬 (row -> col 순서) ***
+        # 행 우선 정렬 (row -> col 순서) 
         row_ordered_results.sort(key=lambda x: (x['row'], x['col']))
 
         # 정렬된 순서로 검색 결과 저장
@@ -964,7 +925,7 @@ class ModifiedLeftSection(QWidget):
             else:
                 print("LeftSection: MVC 모드 - viewDataChanged 시그널 억제")
 
-            # *** 중요: 필터 데이터를 그리드 설정 직후에 즉시 업데이트 ***
+            # 필터 데이터를 그리드 설정 직후에 즉시 업데이트
             # 정렬된 라인 순서를 직접 전달
             projects = []
             if 'Project' in self.data.columns:
@@ -991,7 +952,7 @@ class ModifiedLeftSection(QWidget):
             # 모든 새 아이템에 현재 범례 필터 상태 적용
             print(f"[DEBUG] 아이템 생성 후 현재 필터 상태 적용: {getattr(self, 'current_filter_states', {})}")
             
-            # *** 핵심 수정: current_filter_states가 없거나 비어있으면 기본값 설정 ***
+            # current_filter_states가 없거나 비어있으면 기본값 설정
             if not hasattr(self, 'current_filter_states') or not self.current_filter_states:
                 # 기본값 설정 (자재부족은 True, 나머지는 False)
                 self.current_filter_states = {
@@ -1066,8 +1027,10 @@ class ModifiedLeftSection(QWidget):
                     self, "Reset Complete", "Data has been successfully reset to the original values."
                 )
 
+    """
+    그리드의 모든 아이템에 사전할당 상태 적용
+    """
     def _apply_pre_assigned_status_to_items(self):
-        """🔧 그리드의 모든 아이템에 사전할당 상태 적용"""
         if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
             print("LeftSection: 그리드 위젯이 없음 - 사전할당 상태 적용 스킵")
             return
@@ -1085,16 +1048,16 @@ class ModifiedLeftSection(QWidget):
                             item.set_pre_assigned_status(False)
 
 
+    """
+    사전할당 아이템 목록 설정 및 즉시 적용
+    """
     def set_pre_assigned_items(self, pre_assigned_items):
-        """🔧 사전할당 아이템 목록 설정 및 즉시 적용"""
-        print(f"LeftSection: 사전할당 아이템 설정 - {len(pre_assigned_items)}개")
         self.pre_assigned_items = set(pre_assigned_items)
         
         # 그리드가 이미 생성되어 있으면 즉시 적용
         if (hasattr(self, 'grid_widget') and 
             hasattr(self.grid_widget, 'containers') and 
             self.grid_widget.containers):
-            print("LeftSection: 그리드 존재 - 사전할당 상태 즉시 적용")
             self._apply_pre_assigned_status_to_items()
         else:
             print("LeftSection: 그리드 없음 - 나중에 적용 예정")
@@ -1119,7 +1082,6 @@ class ModifiedLeftSection(QWidget):
         if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
             return
         
-        print(f"자재 부족 상태 적용 시작: {len(shortage_dict)}개 아이템")
         status_applied_count = 0
         
         # 그리드의 모든 컨테이너 순회
@@ -1160,8 +1122,6 @@ class ModifiedLeftSection(QWidget):
     모든 상태 정보를 현재 아이템들에 적용
     """
     def apply_all_states(self):
-        print("[DEBUG] apply_all_states 호출됨")
-    
         if not hasattr(self, 'grid_widget') or not hasattr(self.grid_widget, 'containers'):
             return
         
@@ -1314,7 +1274,6 @@ class ModifiedLeftSection(QWidget):
                         if hasattr(item, 'is_shipment_failure') and item.is_shipment_failure:
                             item.set_shipment_failure(False, None)
 
-
     """
     스크롤 위치 복원
     """
@@ -1346,7 +1305,6 @@ class ModifiedLeftSection(QWidget):
                     if hasattr(item, 'item_data') and item.item_data and item.item_data.get('_id') == item_id:
                         found_item = item
                         found_container = container
-                        print(f"아이템 찾음: ID={item_id}, 위치=[{row_idx}][{col_idx}]")
                         break
                 if found_item:
                     break
@@ -1400,14 +1358,15 @@ class ModifiedLeftSection(QWidget):
 
                     # 스크롤 위치 설정
                     v_bar.setValue(target_y)
-                    print(f"스크롤 위치 설정: y={target_y}")
 
                     break
         except Exception as e:
             print(f"강제 스크롤 중 오류 발생: {str(e)}")
 
+    """
+    스크롤 위치 저장
+    """
     def _save_scroll_position(self):
-        """스크롤 위치 저장"""
         try:
             if hasattr(self.grid_widget, 'scroll_area'):
                 return {
@@ -1418,8 +1377,10 @@ class ModifiedLeftSection(QWidget):
             pass
         return {'horizontal': 0, 'vertical': 0}
 
+    """
+    스크롤 위치 복원
+    """
     def _restore_scroll_position(self, position):
-        """스크롤 위치 복원"""
         if not position:
             return
             
@@ -1434,6 +1395,5 @@ class ModifiedLeftSection(QWidget):
                 if 'vertical' in position:
                     v_bar.setValue(position['vertical'])
                 
-                print(f"스크롤 위치 복원 완료: v={position['vertical']}, h={position['horizontal']}")
         except Exception as e:
             print(f"스크롤 위치 복원 오류: {e}")

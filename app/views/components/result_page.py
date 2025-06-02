@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (QMessageBox, QWidget, QVBoxLayout, QLabel, QPushBut
                              QFrame, QSplitter, QStackedWidget, QTableWidget, QHeaderView,
                             QScrollArea, QGridLayout, QFileDialog)
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
-from PyQt5.QtGui import QCursor, QFont
+from PyQt5.QtGui import QCursor
 import pandas as pd
 import os
 
@@ -216,13 +216,6 @@ class ResultPage(QWidget):
         right_top_horizontal_splitter.addWidget(kpi_frame)
         right_top_horizontal_splitter.addWidget(error_frame)
 
-        # # 스트레치 팩터 설정
-        # right_top_horizontal_splitter.setStretchFactor(0, 1)
-        # right_top_horizontal_splitter.setStretchFactor(1, 1)
-        #
-        # # 지연 후 1:1 비율 강제 적용
-        # QTimer.singleShot(100, lambda: right_top_horizontal_splitter.setSizes([1, 1]))
-
         # 직접 픽셀 크기 지정 (1:1 비율)
         right_top_horizontal_splitter.setSizes([500, 500])  # 적절한 값으로 조정
    
@@ -301,8 +294,6 @@ class ResultPage(QWidget):
     def connect_signals(self):
         if self._mvc_mode:
             print("ResultPage: MVC 모드 - Controller를 통한 연결만 사용")
-            # MVC 모드에서는 Controller가 모든 업데이트를 담당
-            # 여기서는 추가 연결 없음
             return
 
         # MVC 컨트롤러가 없는 경우: 레거시 직접 처리 방식 사용
@@ -317,8 +308,10 @@ class ResultPage(QWidget):
                 self.left_section.itemModified.connect(self.on_item_data_changed_legacy)
                 print("ResultPage: Legacy itemModified 연결")
 
+    """
+    초기화 - 분석 결과와 함께 (MVC 전용)
+    """
     def initialize_with_data(self, df, analysis_results):
-        """🎯 초기화 - 분석 결과와 함께 (MVC 전용)"""
         print("ResultPage: 분석 결과와 함께 초기화")
         
         self.result_data = df
@@ -335,13 +328,12 @@ class ResultPage(QWidget):
             print("ResultPage: 사전할당 정보 없음 또는 LeftSection 없음")
         
         # 분석 결과로 위젯 업데이트 (재분석 없음)
-        # self._update_widgets_with_analysis_results(analysis_results)
         self._update_widgets_with_analysis_results(analysis_results)
 
+    """
+    UI만 업데이트 - 분석 없음 (MVC 전용)
+    """
     def update_ui_only(self, df, analysis_results):
-        """🎯 UI만 업데이트 - 분석 없음 (MVC 전용)"""
-        print("ResultPage: UI만 업데이트 (분석 없음)")
-        
         self.result_data = df
         
         # 각 위젯에 결과만 적용
@@ -349,11 +341,12 @@ class ResultPage(QWidget):
         self._apply_material_results(analysis_results.get('material', {}))
         self._apply_shipment_results(analysis_results.get('shipment', {}))
         self._apply_visualization_results(analysis_results)
-        
-        print("ResultPage: 결과 적용 완료")
+    
 
+    """
+    자재 결과 적용 - 분석 없음
+    """
     def _apply_material_results(self, material_results):
-        """자재 결과 적용 - 분석 없음"""
         if 'analyzer' in material_results:
             self.material_analyzer = material_results['analyzer']
             
@@ -362,8 +355,10 @@ class ResultPage(QWidget):
                 shortage_results = material_results.get('shortage_results', {})
                 self.left_section.apply_shortage_status(shortage_results)
     
+    """
+    출하 결과 적용 - 분석 없음
+    """
     def _apply_shipment_results(self, shipment_results):
-        """출하 결과 적용 - 분석 없음"""
         if not shipment_results.get('analyzed'):
             return
             
@@ -382,8 +377,10 @@ class ResultPage(QWidget):
             self._last_shipment_failures = failure_items
 
 
+    """
+    분석 결과로 위젯 업데이트 - 재분석 없음
+    """
     def _update_widgets_with_analysis_results(self, analysis_results):
-        """🎯 분석 결과로 위젯 업데이트 - 재분석 없음"""
         print("ResultPage: 분석 결과로 위젯 업데이트")
         
         if not analysis_results:
@@ -434,8 +431,10 @@ class ResultPage(QWidget):
             import traceback
             traceback.print_exc()
     
+    """
+    출하 분석 호출 부분만 제거
+    """
     def preload_tab_analyses(self, data):
-        """🔧 출하 분석 호출 부분만 제거"""
         if data is None or data.empty:
             return
             
@@ -693,9 +692,6 @@ class ResultPage(QWidget):
             except Exception as e:
                 print(f"[WARNING] 데이터 타입 변환 중 오류: {e}")
             
-            # 파일 경로 저장
-            # FilePaths.set("result_file", file_path)
-            
             # MVC 구조 초기화
             print("[INFO] MVC 구조 초기화 시작")
             
@@ -780,8 +776,6 @@ class ResultPage(QWidget):
             return False
         
 
-
-
     """
     Material 탭 콘텐츠 생성
     """
@@ -818,7 +812,6 @@ class ResultPage(QWidget):
         # Plan 위젯
         plan_tab = self.tab_manager.get_tab_instance('Plan')
         if plan_tab:
-            # PlanTab 클래스 안에 plan_maintenance_widget 프로퍼티가 있다고 가정
             self.plan_maintenance_widget = plan_tab.plan_maintenance_widget
 
         # PortCapa 위젯
@@ -830,7 +823,6 @@ class ResultPage(QWidget):
         shipment_tab = self.tab_manager.get_tab_instance('Shipment')
         if shipment_tab:
             self.shipment_widget = shipment_tab.shipment_widget
-            # self.shipment_widget.shipment_status_updated.connect(self.on_shipment_status_updated)
 
         # SplitView 위젯 
         splitview_tab = self.tab_manager.get_tab_instance('SplitView')
@@ -875,24 +867,6 @@ class ResultPage(QWidget):
         # 기존에 사용하던 material_analyzer 업데이트
         if hasattr(self, 'material_widget') and self.material_widget:
             self.material_analyzer = self.material_widget.get_material_analyzer()
-
-    # """
-    # 출하 상태가 업데이트될 때 호출되는 함수
-    # 출하 실패 정보가 업데이트되면 왼쪽 섹션의 아이템에 표시
-    
-    # Args:
-    #     failure_items (dict): 아이템 코드를 키로, 실패 정보를 값으로 가진 딕셔너리
-    # """
-    # def on_shipment_status_updated(self, failure_items):
-        
-    #     # 왼쪽 섹션에 출하 실패 정보 전달
-    #     if hasattr(self, 'left_section'):
-    #         self.left_section.set_shipment_failure_items(failure_items)
-        
-    #     # 범례 위젯의 출하 체크박스 자동 활성화
-    #     if hasattr(self.left_section, 'legend_widget') and len(failure_items) > 0:
-    #         # 출하 필터 자동 활성화
-    #         self.left_section.legend_widget.checkbox_map['shipment'].setChecked(True)
         
     """
     각 지표별 초기 시각화 생성
@@ -913,19 +887,6 @@ class ResultPage(QWidget):
             
             VisualizationUpdater.update_utilization_chart(canvas, self.utilization_data)
 
-        elif viz_type == "PortCapa":
-            pass
-
-    # """
-    # 출하 상태가 업데이트될 때 호출되는 함수
-    # 출하 실패 정보가 업데이트되면 왼쪽 섹션의 아이템에 표시
-    # """
-    # def on_shipment_status_updated(self, failure_items):
-    #     print(f"출하 상태 업데이트: {len(failure_items)} 개의 실패 아이템")
-        
-    #     # 왼쪽 섹션에 출하 실패 정보 전달
-    #     if hasattr(self, 'left_section'):
-    #         self.left_section.set_shipment_failure_items(failure_items)
 
     """
     모든 시각화 차트 업데이트
@@ -1019,8 +980,10 @@ class ResultPage(QWidget):
             print(f"Export 과정에서 오류 발생: {str(e)}")
             QMessageBox.critical(self, "Export Error", f"An error occurred during export:\n{str(e)}")
 
+    """
+    아이템 상태 업데이트 - 사전할당, 자재부족, 출하실패
+    """
     def _update_item_status(self):
-        """🔧 아이템 상태 업데이트 - 사전할당, 자재부족, 출하실패"""
         print("ResultPage: 아이템 상태 업데이트")
         
         try:

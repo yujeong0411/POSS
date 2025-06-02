@@ -201,7 +201,9 @@ class AdjErrorManager():
     def has_errors(self):
         return bool(self.validation_errors)
     
-    """에러가 있는 아이템 카드 강조"""
+    """
+    에러가 있는 아이템 카드 강조
+    """
     def highlight_error_item(self, item_info):
         if not hasattr(self, 'left_section') or not hasattr(self.left_section, 'grid_widget'):
             return
@@ -231,7 +233,9 @@ class AdjErrorManager():
                             return
 
 
-    """아이템 카드 강조 해재"""
+    """
+    아이템 카드 강조 해제
+    """
     def remove_item_highlight(self, item_info):
         if not hasattr(self, 'left_section') or not hasattr(self.left_section, 'grid_widget'):
             return

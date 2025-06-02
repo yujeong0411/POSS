@@ -1,7 +1,5 @@
 import pandas as pd
-import os
 from app.utils.item_key_manager import ItemKeyManager
-from app.models.common.file_store import FilePaths
 
 """
 생산 계획의 유지율을 계산하는 클래스
@@ -12,24 +10,24 @@ from app.models.common.file_store import FilePaths
 """
 class PlanMaintenanceAnalyzer:
 
+    """
+    계획 유지율 분석
+    
+    Args:
+        current_df: 현재 계획 데이터
+        previous_df: 이전 계획 데이터 (없으면 자동 로드)
+    
+    Returns:
+        dict: {
+            'analyzed': bool,
+            'item_data': {'df': DataFrame, 'rate': float},
+            'rmc_data': {'df': DataFrame, 'rate': float},
+            'changed_items': set,  # UI 표시용
+            'message': str
+        }
+    """
     @staticmethod
     def analyze_maintenance_rate(current_df, previous_df=None):
-        """
-        계획 유지율 분석
-        
-        Args:
-            current_df: 현재 계획 데이터
-            previous_df: 이전 계획 데이터 (없으면 자동 로드)
-        
-        Returns:
-            dict: {
-                'analyzed': bool,
-                'item_data': {'df': DataFrame, 'rate': float},
-                'rmc_data': {'df': DataFrame, 'rate': float},
-                'changed_items': set,  # UI 표시용
-                'message': str
-            }
-        """
         if current_df is None or current_df.empty:
             return {'analyzed': False, 'message': 'No current plan data'}
         
@@ -65,9 +63,11 @@ class PlanMaintenanceAnalyzer:
                 'message': f'Analysis failed: {str(e)}'
             }
     
+    """
+    Item별 유지율 계산
+    """
     @staticmethod
     def _calculate_item_maintenance(prev_df, curr_df):
-        """Item별 유지율 계산"""
         # 1. 그룹화
         prev_grouped = prev_df.groupby(['Line', 'Time', 'Item'])['Qty'].sum().reset_index()
         curr_grouped = curr_df.groupby(['Line', 'Time', 'Item'])['Qty'].sum().reset_index()
@@ -96,14 +96,27 @@ class PlanMaintenanceAnalyzer:
         for _, row in merged.iterrows():
             if row['Qty_prev'] != row['Qty_curr']:
                 # ID로 해당 아이템 찾기
-                item_mask = (
-                    (curr_df['Line'] == row['Line']) & 
-                    (curr_df['Time'] == row['Time']) & 
-                    (curr_df['Item'] == row['Item'])
+                mask = ItemKeyManager.create_mask_for_item(
+                    curr_df, 
+                    row['Line'], 
+                    row['Time'], 
+                    row['Item']
+
                 )
-                if item_mask.any():
-                    item_id = curr_df.loc[item_mask, '_id'].iloc[0]
-                    changed_items.add(f"id_{item_id}")
+                if mask.any():
+                    # ID가 있으면 ID 우선, 없으면 Line-Time-Item 조합 사용
+                    if '_id' in curr_df.columns:
+                        item_ids = curr_df.loc[mask, '_id'].dropna().unique()
+                        for item_id in item_ids:
+                            changed_items.add(f"id_{item_id}")
+                    else:
+                        # ID가 없는 경우 Line-Time-Item 조합으로 키 생성
+                        item_key = ItemKeyManager.get_item_key(
+                            row['Line'], 
+                            row['Time'], 
+                            row['Item']
+                        )
+                        changed_items.add(f"key_{item_key}")
         
         # 5. 결과 정리
         result_df = merged.rename(columns={
@@ -132,9 +145,11 @@ class PlanMaintenanceAnalyzer:
         
         return result_df, rate, changed_items
     
+    """
+    RMC별 유지율 계산
+    """
     @staticmethod
     def _calculate_rmc_maintenance(prev_df, curr_df):
-        """RMC별 유지율 계산"""
         # RMC 컬럼이 없으면 빈 결과 반환
         if 'RMC' not in prev_df.columns or 'RMC' not in curr_df.columns:
             return pd.DataFrame(), 0.0, set()
@@ -173,8 +188,15 @@ class PlanMaintenanceAnalyzer:
                     (curr_df['RMC'] == row['RMC'])
                 )
                 if rmc_mask.any():
-                    rmc_id = curr_df.loc[rmc_mask, '_id'].iloc[0]
-                    changed_rmcs.add(f"id_{rmc_id}")
+                    # ID가 있으면 ID 우선, 없으면 Line-Time-RMC 조합 사용
+                    if '_id' in curr_df.columns:
+                        rmc_ids = curr_df.loc[rmc_mask, '_id'].dropna().unique()
+                        for rmc_id in rmc_ids:
+                            changed_rmcs.add(f"id_{rmc_id}")
+                    else:
+                        # ID가 없는 경우 Line-Time-RMC 조합으로 키 생성
+                        rmc_key = f"{row['Line']}_{row['Time']}_{row['RMC']}"
+                        changed_rmcs.add(f"key_{rmc_key}")
         
         # 5. 결과 정리
         result_df = merged.rename(columns={

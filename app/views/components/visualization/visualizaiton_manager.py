@@ -2,21 +2,24 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
-"""Basic visualization module"""
+"""
+Basic visualization module
+
+Args:
+data: Dictionary or DataFrame with data to visualize
+chart_type: Type of chart ('bar', 'line', 'pie', 'heatmap', etc)
+title: Chart title
+xlabel: X-axis label
+ylabel: Y-axis label
+ax: Matplotlib axes to plot on (optional)
+**kwargs: Additional parameters for specific chart types
+
+Returns:
+Matplotlib axes with the plot
+"""
 class VisualizationManager:
     @staticmethod
     def create_chart(data, chart_type='bar', title='Chart', xlabel='X', ylabel='Y', ax=None, **kwargs):
-        # Args:
-        # data: Dictionary or DataFrame with data to visualize
-        # chart_type: Type of chart ('bar', 'line', 'pie', 'heatmap', etc)
-        # title: Chart title
-        # xlabel: X-axis label
-        # ylabel: Y-axis label
-        # ax: Matplotlib axes to plot on (optional)
-        # **kwargs: Additional parameters for specific chart types
-
-        # Returns:
-        # Matplotlib axes with the plot
 
         if ax is None:
             fig, ax = plt.subplots(figsize=(8,5))
@@ -26,7 +29,6 @@ class VisualizationManager:
 
         # 비교 차트 처리
         if chart_type == 'comparison_bar':
-            print("비교 차트 함수 호출됨")
             return VisualizationManager.create_comparison_bar_chart(data, title, xlabel, ylabel, ax, **kwargs)
 
         # 시각화에 필요한 형식으로 데이터 변환

@@ -81,7 +81,6 @@ class ItemKeyManager:
         
         # DataFrame에 필요한 컬럼이 있는지 확인
         if not all(col in df.columns for col in ['Line', 'Time', 'Item']):
-            print(f"[DEBUG] DataFrame에 필요한 컬럼이 없음: {df.columns.tolist()}")
             return pd.Series(dtype=bool)
         
         # 타입 변환 보장
@@ -174,14 +173,22 @@ class ItemKeyManager:
         
         return item_id
     
+    """
+    키 생성 - ID 우선, 없으면 Line-Time-Item 조합
+    """
     @staticmethod
-    def get_item_key(item_info: Dict[str, Any]) -> str:
-        """키 생성 - ID 우선, 없으면 Line-Time-Item 조합"""
-        if '_id' in item_info and item_info['_id']:
-            return str(item_info['_id'])
+    def get_item_key(item_info_or_line: Dict[str, Any]) -> str:
+        # 딕셔너리가 전달된 경우
+        if isinstance(item_info_or_line, dict):
+            item_info = item_info_or_line
+            if '_id' in item_info and item_info['_id']:
+                return str(item_info['_id'])
+            else:
+                return ItemKeyManager.get_item_by_not_id(
+                    item_info.get('Line'),
+                    item_info.get('Time'), 
+                    item_info.get('Item')
+                )
         else:
-            return ItemKeyManager.get_item_key(
-                item_info.get('Line'),
-                item_info.get('Time'), 
-                item_info.get('Item')
-            )
+            # 개별 파라미터가 전달된 경우
+            return ItemKeyManager.get_item_by_not_id(item_info_or_line, time, item)

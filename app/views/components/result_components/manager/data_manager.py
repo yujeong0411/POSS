@@ -29,13 +29,11 @@ class DataManager(QObject):
             hasattr(self.left_section, 'controller') and 
             self.left_section.controller):
             
-            print("DataManager: MVC 모드 - Controller에 위임")
             self.left_section.itemModified.emit(item, new_data, changed_fields)
             # 분석은 Controller가 담당
             return
 
         # Legacy 모드: 기존 방식
-        print("DataManager: Legacy 모드 - 직접 처리")
         self._legacy_item_changed(item, new_data, changed_fields)
 
     def _legacy_item_changed(self, item, new_data, changed_fields):
@@ -111,12 +109,16 @@ class DataManager(QObject):
             print(f"사전 분석 초기화 중 오류: {e}")
     
 
+    """
+    필터 데이터 업데이트 (Left Section 전용)
+    """
     def handle_filter_data_update(self):
-        """필터 데이터 업데이트 (Left Section 전용)"""
         self.left_section.update_filter_data()
 
+    """
+    새로 생성된 아이템 등록
+    """
     def register_item(self, item):
-        """새로 생성된 아이템 등록"""
         if item not in self.left_section.all_items:
             self.left_section.all_items.append(item)
 
@@ -126,7 +128,6 @@ class DataManager(QObject):
                 if search_text:
                     self.apply_search_to_item(item, search_text)
                     
-
     """
     아이템에 검색 조건 적용
     """
@@ -167,12 +168,9 @@ class DataManager(QObject):
             self.left_section._mvc_mode and 
             hasattr(self.left_section, 'controller') and 
             self.left_section.controller):
-            print("DataManager: MVC 모드 - 삭제는 Controller가 처리")
             return
         
         # Legacy 모드에서만 직접 처리
-        print("DataManager: Legacy 모드 - 직접 삭제 처리")
-        
         if self.left_section.data is None:
             print("DEBUG: 데이터가 없음")
             return
@@ -181,7 +179,6 @@ class DataManager(QObject):
         if isinstance(item_or_id, str):
             item_id = item_or_id
 
-            print(f"DEBUG: ID로 삭제: {item_id}")
             mask = ItemKeyManager.create_mask_by_id(self.left_section.data, item_id)
             if mask.any():
                 self.left_section.data = self.left_section.data[~mask].reset_index(drop=True)
@@ -199,7 +196,6 @@ class DataManager(QObject):
             # ID가 있으면 ID로 찾기
             item_id = ItemKeyManager.extract_item_id(item_or_id)
             if item_id:
-                print(f"DEBUG: 아이템 객체의 ID로 삭제: {item_id}")
                 mask = ItemKeyManager.create_mask_by_id(self.left_section.data, item_id)
                 if mask.any():
                     self.left_section.data = self.left_section.data[~mask].reset_index(drop=True)
@@ -211,7 +207,6 @@ class DataManager(QObject):
             # ID가 없으면 Line/Time/Item으로 찾기
             line, time, item_code = ItemKeyManager.get_item_from_data(item_or_id.item_data)
             if line is not None and time is not None and item_code is not None:
-                print(f"DEBUG: Line/Time/Item으로 삭제: {item_code} @ {line}-{time}")
                 mask = ItemKeyManager.create_mask_for_item(self.left_section.data, line, time, item_code)
                 if mask.any():
                     self.left_section.data = self.left_section.data[~mask].reset_index(drop=True)
@@ -266,28 +261,25 @@ class DataManager(QObject):
         # MVC/Legacy 모드에 따라 처리
         if (hasattr(self.left_section, '_mvc_mode') and 
             self.left_section._mvc_mode):
-            print("DataManager: MVC 모드 - 외부 데이터 설정 (UI만)")
             self.left_section.update_ui_with_signals()  # 시그널 억제
         else:
-            print("DataManager: Legacy 모드 - 외부 데이터 설정 (분석 포함)")
             self.update_table_from_data()  # 기존 방식
 
     """
     모델로부터 UI 업데이트 - 이벤트 발생시키지 않음
     """
     def update_from_model(self, model_df=None):
-        print("ModifiedLeftSection: update_from_model 호출")
-        # 🎯 MVC 모드: UI만 업데이트 (분석 없음)
+        # MVC 모드: UI만 업데이트 (분석 없음)
         if (hasattr(self.left_section, '_mvc_mode') and 
             self.left_section._mvc_mode):
-            print("DataManager: MVC 모드 - UI만 업데이트 (분석 없음)")
             self._mvc_update_ui_only(model_df)
         else:
-            print("DataManager: Legacy 모드 - 분석 포함 업데이트")
             self._legacy_full_update(model_df)
 
+    """
+    MVC 모드: UI만 업데이트
+    """
     def _mvc_update_ui_only(self, model_df):
-        """🎯 MVC 모드: UI만 업데이트"""
         if model_df is not None and not model_df.empty:
             # 스크롤 위치 저장
             scroll_position = self._save_scroll_position()
@@ -302,8 +294,10 @@ class DataManager(QObject):
             # 스크롤 위치 복원
             self._restore_scroll_position(scroll_position)
 
+    """
+    Legacy 모드: 분석 포함 전체 업데이트
+    """
     def _legacy_full_update(self, model_df):
-        """Legacy 모드: 분석 포함 전체 업데이트"""
         # 기존 복잡한 로직 (변경 없음)
         current_selected_item_id = None
         if self.left_section.current_selected_item and hasattr(self.left_section.current_selected_item, 'item_data'):
@@ -351,8 +345,10 @@ class DataManager(QObject):
         # Legacy 모드에서만 분석 실행
         self._trigger_analysis()
 
+    """
+    스크롤 위치 저장
+    """
     def _save_scroll_position(self):
-        """스크롤 위치 저장"""
         try:
             if hasattr(self.left_section, 'grid_widget') and hasattr(self.left_section.grid_widget, 'scroll_area'):
                 h_bar = self.left_section.grid_widget.scroll_area.horizontalScrollBar()
@@ -365,8 +361,10 @@ class DataManager(QObject):
             pass
         return {'horizontal': 0, 'vertical': 0}
 
+    """
+    스크롤 위치 복원
+    """
     def _restore_scroll_position(self, position):
-        """스크롤 위치 복원"""
         if not position:
             return
             

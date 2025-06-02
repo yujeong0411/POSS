@@ -147,17 +147,3 @@ class LegendWidget(QWidget):
         print(f"[LegendWidget] 필터 새로고침: {self.filter_states}")
         # 현재 상태로 시그널 발생
         self.filter_changed.emit(self.filter_states.copy())
-        
-        # # 현재 상태 백업
-        # current_states = self.filter_states.copy()
-        
-        # # 모든 체크박스 강제 업데이트
-        # for status_type, checkbox in self.checkbox_map.items():
-        #     is_checked = current_states.get(status_type, False)
-            
-        #     # 체크 상태가 이미 맞으면 변경하지 않음
-        #     if checkbox.isChecked() == is_checked:
-        #         continue
-                
-        #     # 상태가 다르면 체크박스 상태 변경 (강제로 이벤트 발생)
-        #     checkbox.setChecked(is_checked)

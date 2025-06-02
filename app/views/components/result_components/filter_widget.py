@@ -7,7 +7,9 @@ import pandas as pd
 from app.resources.fonts.font_manager import font_manager
 from app.models.common.screen_manager import *
 
-"""필터 위젯 - 라인 및 프로젝트 선택 필터"""
+"""
+필터 위젯 - 라인 및 프로젝트 선택 필터
+"""
 class FilterWidget(QWidget):
     
     # 필터 변경 시그널
@@ -400,8 +402,9 @@ class FilterWidget(QWidget):
             self.filter_data['project'] = sorted([str(project) for project in projects])
             self.update_project_filters()
 
-    """라인 필터 체크박스 업데이트"""
-
+    """
+    라인 필터 체크박스 업데이트
+    """
     def update_line_filters(self):
         # 기존 체크박스 정리
         self._clear_layout(self.line_checkbox_layout)
@@ -431,6 +434,9 @@ class FilterWidget(QWidget):
         # 버튼 텍스트 업데이트
         self.line_filter_btn.setText(f"Line ({len(sorted_lines)})")
 
+    """
+    프로젝트 필터 업데이트
+    """
     def update_project_filters(self):
 
         # 기존 체크박스 정리
@@ -457,7 +463,9 @@ class FilterWidget(QWidget):
         # 버튼 텍스트 업데이트
         self.project_filter_btn.setText(f"Project ({len(self.filter_data['project'])})")
 
-    """레이아웃 내 위젯 모두 제거"""
+    """
+    레이아웃 내 위젯 모두 제거
+    """
     def _clear_layout(self, layout):
         while layout.count():
             item = layout.takeAt(0)
@@ -465,7 +473,9 @@ class FilterWidget(QWidget):
             if widget:
                 widget.deleteLater()
     
-    """필터 상태 변경 처리"""
+    """
+    필터 상태 변경 처리
+    """
     def on_filter_changed(self, filter_type, value, is_checked):
         # 값이 숫자인 경우에도 문자열로 처리하여 일관성 유지
         if isinstance(value, (int, float)):
@@ -474,8 +484,9 @@ class FilterWidget(QWidget):
         self.filter_states[filter_type][value] = is_checked
         self.filter_changed.emit(self.filter_states.copy())
     
-    """특정 필터 유형의 모든 필터 선택"""
-
+    """
+    특정 필터 유형의 모든 필터 선택
+    """
     def select_all_filters(self, filter_type):
         if filter_type == 'line':
             layout = self.line_checkbox_layout
@@ -516,10 +527,10 @@ class FilterWidget(QWidget):
         # 필터 변경 신호 한 번만 발생
         self.filter_changed.emit(self.filter_states.copy())
     
-    """특정 필터 유형의 모든 필터 해제"""
-
+    """
+    특정 필터 유형의 모든 필터 해제
+    """
     def clear_all_filters(self, filter_type):
-        """특정 필터 유형의 모든 필터 해제"""
         if filter_type == 'line':
             layout = self.line_checkbox_layout
         else:
@@ -548,19 +559,17 @@ class FilterWidget(QWidget):
         for checkbox in checkboxes_to_update:
             checkbox.blockSignals(False)
 
-        # # ★ 마지막에 한 번만 필터 변경 신호 발생
-        # self.filter_changed.emit(self.filter_states.copy())
 
+    """
+    라인을 제조동별 생산량 기준으로 정렬하는 메서드
+
+    Args:
+        lines: 정렬할 라인 목록
+
+    Returns:
+        정렬된 라인 목록
+    """
     def sort_lines_by_building(self, lines):
-        """
-        라인을 제조동별 생산량 기준으로 정렬하는 메서드
-
-        Args:
-            lines: 정렬할 라인 목록
-
-        Returns:
-            정렬된 라인 목록
-        """
         try:
             # 데이터프레임이 있으면 생산량 기준 정렬, 없으면 알파벳 순 정렬
             if hasattr(self, 'data_df') and self.data_df is not None and not self.data_df.empty:
@@ -573,8 +582,10 @@ class FilterWidget(QWidget):
             # 오류 발생 시 원본 목록 정렬하여 반환
             return sorted(lines)
 
+    """
+    생산량 기준 라인 정렬 - 제조동은 생산량순, 제조동 내부는 번호순
+    """
     def _sort_by_production_volume(self, lines):
-        """생산량 기준 라인 정렬 - 제조동은 생산량순, 제조동 내부는 번호순"""
         try:
 
             # 제조동별 생산량 계산
@@ -610,8 +621,10 @@ class FilterWidget(QWidget):
             print(f"DEBUG: 생산량 기준 정렬 중 오류: {e}")
             return self._sort_alphabetically(lines)
 
+    """
+    알파벳 순 라인 정렬 - 제조동은 알파벳순, 제조동 내부는 번호순
+    """
     def _sort_alphabetically(self, lines):
-        """알파벳 순 라인 정렬 - 제조동은 알파벳순, 제조동 내부는 번호순"""
         try:
             # 제조동별로 라인 그룹화
             building_groups = {}
@@ -640,19 +653,21 @@ class FilterWidget(QWidget):
             print(f"DEBUG: 알파벳 순 정렬 중 오류: {e}")
             return sorted(lines)
 
+    """
+    라인을 번호순으로 정렬 (I_01, I_02, I_03, I_10 순서)
+
+    Args:
+        lines: 같은 제조동의 라인 목록
+
+    Returns:
+        번호순으로 정렬된 라인 목록
+    """
     def _sort_lines_by_number(self, lines):
-        """
-        라인을 번호순으로 정렬 (I_01, I_02, I_03, I_10 순서)
-
-        Args:
-            lines: 같은 제조동의 라인 목록
-
-        Returns:
-            번호순으로 정렬된 라인 목록
-        """
         try:
+            """
+            라인에서 숫자 부분 추출
+            """
             def extract_line_number(line):
-                """라인에서 숫자 부분 추출"""
                 if '_' in line:
                     number_part = line.split('_')[1]
                     try:

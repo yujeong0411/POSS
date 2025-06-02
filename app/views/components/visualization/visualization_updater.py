@@ -3,23 +3,31 @@ from app.views.components.visualization.display_helper import DisplayHelper
 from app.analysis.output.material_shortage_analysis import MaterialShortageAnalyzer
 from app.analysis.output.capa_ratio import CapaRatioAnalyzer
 
-"""output 시각화 업데이트 클래스"""
+"""
+output 시각화 업데이트 클래스
+"""
 class VisualizationUpdater:
-    """Capa 차트의 데이터 유효성 확인 함수"""
+    """
+    Capa 차트의 데이터 유효성 확인 함수
+    """
     @staticmethod
     def _is_capa_data_valid(data):
         if isinstance(data, dict) and 'original' in data and 'adjusted' in data:
             return data['original'] and len(data['original']) > 0
         return data and len(data) > 0
     
-    """Utilization 차트의 데이터 유효성 확인 함수"""
+    """
+    Utilization 차트의 데이터 유효성 확인 함수
+    """
     @staticmethod
     def _is_utilization_data_valid(data):
         if isinstance(data, dict) and 'original' in data and 'adjusted' in data:
             return data['original'] and any(value > 0 for value in data['original'].values())
         return data and any(value > 0 for value in data.values())
     
-    """요일 데이터 정렬 함수"""
+    """
+    요일 데이터 정렬 함수
+    """
     @staticmethod
     def _transform_utilization_data(data):
         days_order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -41,7 +49,9 @@ class VisualizationUpdater:
                 sorted_data[day] = data.get(day, 0)
             return sorted_data
 
-    """Capa 비율 차트 업데이트"""
+    """
+    Capa 비율 차트 업데이트
+    """
     @staticmethod
     def update_capa_chart(canvas, capa_ratio_data):
         # 비교 데이터형식 감지
@@ -76,7 +86,9 @@ class VisualizationUpdater:
      
         DisplayHelper.show_chart_or_message(canvas, capa_ratio_data, chart_config)
 
-    """요일별 가동률 차트 업데이트"""
+    """
+    요일별 가동률 차트 업데이트
+    """
     @staticmethod
     def update_utilization_chart(canvas, utilization_data):
          # 비교 데이터 형식 감지
@@ -103,14 +115,11 @@ class VisualizationUpdater:
         }
        
         DisplayHelper.show_chart_or_message(canvas, utilization_data, chart_config)
-
-    """출하포트 Capa 차트 업데이트"""
-    @staticmethod
-    def update_port_capa_chart(canvas, port_capa_data):
-        pass
     
     
-    """Material 차트의 데이터 유효성 확인 함수"""
+    """
+    Material 차트의 데이터 유효성 확인 함수
+    """
     @staticmethod
     def _is_material_shortage_data_valid(data):
         return data and len(data) > 0

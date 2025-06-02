@@ -276,7 +276,7 @@ class SummaryWidget(QWidget):
         if summary_df.empty:
             self.clear_table()
             return
-        
+
         # 표시용 컬럼만 추출 (is_total은 제외하고 표시)
         display_columns = [col for col in summary_df.columns if col != 'is_total']
         fixed_columns = {
@@ -287,30 +287,30 @@ class SummaryWidget(QWidget):
         self.summary_table.setup_header(display_columns, fixed_columns=fixed_columns, resizable=False)
         self.summary_table.setRowCount(0)  # 기존 데이터 클리어
 
-        # 제조동별 병합 
+        # 제조동별 병합
         building_spans = {}
         line_spans = {}
-        
+
         # 제조동별 행 범위 찾기
         for row_idx, (_, row) in enumerate(summary_df.iterrows()):
             is_total_row = row.get('is_total', False)
 
             # 행 데이터 생성 (is_total 제외)
             row_data = [str(row[col]) if pd.notna(row[col]) else "" for col in summary_df.columns if col != 'is_total']
-            
+
             # Total 행은 is_total=True로 추가
             if is_total_row:
                 self.summary_table.add_custom_row(row_data, is_total=True)
             else:
                 # 일반 행은 기본 스타일로 추가
                 self.summary_table.add_custom_row(row_data)
-            
+
             # 제조동별 병합 정보 수집
             building_portion = row['Building(Portion)']
             if building_portion and '(' in building_portion and building_portion != 'Total':
                 building_name = building_portion.split('(')[0]
                 building_spans[building_name] = {'start_row': row_idx, 'rows': [row_idx]}
-                
+
                 # 같은 제조동의 다음 행들 찾기
                 for next_idx in range(row_idx + 1, len(summary_df)):
                     next_row = summary_df.iloc[next_idx]
@@ -318,7 +318,7 @@ class SummaryWidget(QWidget):
                     if next_building and '(' in next_building:
                         break
                     building_spans[building_name]['rows'].append(next_idx)
-            
+
             # 라인별 병합 정보 수집
             line_name = row['Line'].strip()
             if line_name and line_name != 'Total' and '_' in line_name:
@@ -326,7 +326,14 @@ class SummaryWidget(QWidget):
                     line_spans[line_name] = {'start_row': row_idx, 'rows': [row_idx]}
                 else:
                     line_spans[line_name]['rows'].append(row_idx)
-        
+
+        # 모든 셀 가운데 정렬 적용 (병합 전)
+        for row in range(self.summary_table.rowCount()):
+            for col in range(self.summary_table.columnCount()):
+                item = self.summary_table.item(row, col)
+                if item:
+                    item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+
         # 제조동별 병합 적용
         for building_name, span_info in building_spans.items():
             rows = span_info['rows']
@@ -334,33 +341,31 @@ class SummaryWidget(QWidget):
                 start_row = min(rows)
                 row_count = len(rows)
                 self.summary_table.merge_cells(start_row, 0, row_count, 1)
-                
-                # 병합된 셀 중앙 정렬
+
+                # 병합된 셀 가운데 정렬 (이미 위에서 설정했지만 명시적으로 재설정)
                 item = self.summary_table.item(start_row, 0)
                 if item:
                     item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-        
+
         # 라인별 병합 적용
         for line_name, span_info in line_spans.items():
             rows = span_info['rows']
             if len(rows) > 1 and rows == list(range(min(rows), min(rows) + len(rows))):
                 start_row = min(rows)
                 row_count = len(rows)
-                
+
                 # Line, Capa, Line_Qty, Utilization 컬럼 병합
                 for col_idx in [1, 2, 3, 4]:  # Line, Capa, Line_Qty, Utilization
                     self.summary_table.merge_cells(start_row, col_idx, row_count, 1)
                     item = self.summary_table.item(start_row, col_idx)
                     if item:
-                        if col_idx == 1:  # Line 컬럼은 센터 정렬
-                            item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-                        else:  # 나머지는 우측 정렬
-                            item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        
+                        # 모든 컬럼 가운데 정렬로 통일
+                        item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+
         # 행 높이 조정
         for row in range(self.summary_table.rowCount()):
             self.summary_table.setRowHeight(row, 30)
-        
+
         # 첫 번째 컬럼은 조금 더 넓게
         self.summary_table.setColumnWidth(0, 150)
 

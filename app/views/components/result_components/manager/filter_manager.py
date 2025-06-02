@@ -15,7 +15,6 @@ class FilterManager(QObject):
     외부 호출용 메인 필터 적용 메서드
     """
     def apply_filters(self, filter_states):
-        
         # 현재 활성화된 라인 필터 확인
         active_lines = []
         if 'line' in filter_states:
@@ -31,18 +30,31 @@ class FilterManager(QObject):
                     active_projects.append(project)
 
         if not active_lines and not active_projects:
-            # 모든 데이터 표시
-            if (hasattr(self.left_section, 'data') and 
-                self.left_section.data is not None and 
-                not self.left_section.data.empty):
-                all_lines = self.left_section.data['Line'].unique().tolist()
-                self._rebuild_grid_with_filtered_data(all_lines, None)
+            # 모든 데이터 표시 - MVC 모드 고려
+            if (hasattr(self.left_section, '_mvc_mode') and
+                    self.left_section._mvc_mode and
+                    hasattr(self.left_section, 'controller') and
+                    self.left_section.controller):
+
+                current_data = self.left_section.controller.get_current_data()
+                if current_data is not None and not current_data.empty:
+                    all_lines = current_data['Line'].unique().tolist()
+                    self._rebuild_grid_with_filtered_data(all_lines, None)
+                else:
+                    self._show_empty_grid()
             else:
-                self._show_empty_grid()
+                # Legacy 모드
+                if (hasattr(self.left_section, 'data') and
+                        self.left_section.data is not None and
+                        not self.left_section.data.empty):
+                    all_lines = self.left_section.data['Line'].unique().tolist()
+                    self._rebuild_grid_with_filtered_data(all_lines, None)
+                else:
+                    self._show_empty_grid()
         else:
             # 필터링된 데이터 표시
             self._rebuild_grid_with_filtered_data(active_lines, active_projects)
-        
+
         self.filter_applied.emit()
 
     """
@@ -302,13 +314,27 @@ class FilterManager(QObject):
     활성화된 라인과 프로젝트로 그리드 재구성
     """
     def _rebuild_grid_with_filtered_data(self, active_lines, active_projects=None):
-        if self.left_section.data is None:
-            return
+        # MVC 모드: Controller에서 현재 데이터 가져오기
+        if (hasattr(self.left_section, '_mvc_mode') and
+                self.left_section._mvc_mode and
+                hasattr(self.left_section, 'controller') and
+                self.left_section.controller):
+
+            current_data = self.left_section.controller.get_current_data()
+            if current_data is None or current_data.empty:
+                self._show_empty_grid()
+                return
+            filtered_data = current_data.copy()
+            print("[FilterManager] MVC 모드: Controller에서 현재 데이터 사용")
+
+        else:
+            # Legacy 모드: 기존 방식
+            if self.left_section.data is None:
+                return
+            filtered_data = self.left_section.data.copy()
+            print("[FilterManager] Legacy 모드: left_section.data 사용")
 
         try:
-            # 데이터 필터링
-            filtered_data = self.left_section.data.copy()
-
             # 라인 필터 적용
             if active_lines:
                 filtered_data = filtered_data[filtered_data['Line'].isin(active_lines)]
@@ -438,7 +464,8 @@ class FilterManager(QObject):
                             failure_info = self.left_section.shipment_failure_items[item_code]
                             new_item.set_shipment_failure(True, failure_info.get('reason', 'Unknown reason'))
 
-                        if hasattr(self.left_section, 'current_shortage_items') and item_code in self.left_section.current_shortage_items:
+                        if hasattr(self.left_section,
+                                   'current_shortage_items') and item_code in self.left_section.current_shortage_items:
                             shortage_info = self.left_section.current_shortage_items[item_code]
                             new_item.set_shortage_status(True, shortage_info)
 

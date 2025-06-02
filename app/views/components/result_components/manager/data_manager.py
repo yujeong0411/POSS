@@ -270,8 +270,8 @@ class DataManager(QObject):
     """
     def update_from_model(self, model_df=None):
         # MVC 모드: UI만 업데이트 (분석 없음)
-        if (hasattr(self.left_section, '_mvc_mode') and 
-            self.left_section._mvc_mode):
+        if (hasattr(self.left_section, '_mvc_mode') and
+                self.left_section._mvc_mode):
             self._mvc_update_ui_only(model_df)
         else:
             self._legacy_full_update(model_df)
@@ -283,14 +283,17 @@ class DataManager(QObject):
         if model_df is not None and not model_df.empty:
             # 스크롤 위치 저장
             scroll_position = self._save_scroll_position()
-            
-            # 데이터 설정
-            self.left_section.data = model_df
-            
+
+            # 데이터 설정 - MVC 모드에서는 controller 데이터를 우선 사용
+            if hasattr(self.left_section, 'controller') and self.left_section.controller:
+                self.left_section.data = self.left_section.controller.get_current_data()
+            else:
+                self.left_section.data = model_df
+
             # UI 업데이트만 (시그널 억제)
             self.left_section.update_ui_with_signals()
             self.left_section.apply_all_filters()
-            
+
             # 스크롤 위치 복원
             self._restore_scroll_position(scroll_position)
 

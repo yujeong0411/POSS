@@ -1209,7 +1209,11 @@ class ModifiedLeftSection(QWidget):
     def extract_dataframe(self) -> pd.DataFrame:
         if self._mvc_mode and self.controller:
             # MVC 모드에서는 모델에서 데이터 가져오기
-            return self.controller.get_current_data()
+            current_data = self.controller.get_current_data()
+            if current_data is not None and not current_data.empty:
+                return self._normalize_data_types(current_data.copy())
+            else:
+                return pd.DataFrame()
         else:
             # Legacy 모드에서는 직접 데이터 반환
             if hasattr(self, 'data') and isinstance(self.data, pd.DataFrame):

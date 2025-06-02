@@ -1,3 +1,4 @@
+# splash_start.py - 새로운 스플래시 화면 파일
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QProgressBar
 from PyQt5.QtCore import Qt, QTimer, pyqtSlot
@@ -5,8 +6,10 @@ from PyQt5.QtGui import QFont, QColor, QPainter, QPen, QBrush, QLinearGradient
 from app.resources.fonts.font_manager import font_manager
 from app.models.common.screen_manager import *
 
+
 class SplashStart(QWidget):
     """스레드 기반 스플래시 화면"""
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Samsung Production Planning System")
@@ -90,17 +93,13 @@ class SplashStart(QWidget):
         layout.addStretch(1)
         layout.addWidget(version_label)
 
-
-    """
-    창을 화면 중앙에 배치
-    """
     def center(self):
+        """창을 화면 중앙에 배치"""
         screen = QApplication.primaryScreen().geometry()
         size = self.geometry()
         self.move(int((screen.width() - size.width()) / 2),
                   int((screen.height() - size.height()) / 2))
-        
-    
+
     @pyqtSlot(int, str)
     def update_progress_external(self, progress, message):
         """외부에서 진행률 업데이트 (스레드 안전)"""
@@ -112,10 +111,8 @@ class SplashStart(QWidget):
         self.repaint()
         QApplication.processEvents()  # 이벤트 처리 강제 실행
 
-    """
-    배경 그라데이션 및 테두리 그리기
-    """
     def paintEvent(self, event):
+        """배경 그라데이션 및 테두리 그리기"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 

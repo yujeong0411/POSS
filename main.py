@@ -1,10 +1,10 @@
-# main.py
 import sys
 import traceback
 from PyQt5.QtWidgets import QApplication, QMessageBox, QStyleFactory
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
 from app.resources.styles.app_style import AppStyle
 from splash_start import SplashStart
+
 
 def exception_hook(exctype, value, traceback_obj):
     """글로벌 예외 처리기"""
@@ -146,6 +146,7 @@ def _styled_msgbox(parent, title, text,
         msg.setDefaultButton(defaultButton)
     return msg.exec_()
 
+
 if __name__ == "__main__":
     # High DPI 설정
     if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
@@ -153,15 +154,19 @@ if __name__ == "__main__":
 
     app = QApplication(sys.argv)
 
+
     # 스타일된 메시지박스 설정 (람다 함수 구문 오류 수정)
     def warning_box(parent, title, text, buttons=QMessageBox.Ok, defaultButton=QMessageBox.NoButton):
         return _styled_msgbox(parent, title, text, QMessageBox.NoIcon, buttons, defaultButton)
 
+
     def information_box(parent, title, text, buttons=QMessageBox.Ok, defaultButton=QMessageBox.NoButton):
         return _styled_msgbox(parent, title, text, QMessageBox.NoIcon, buttons, defaultButton)
 
+
     def critical_box(parent, title, text, buttons=QMessageBox.Ok, defaultButton=QMessageBox.NoButton):
         return _styled_msgbox(parent, title, text, QMessageBox.NoIcon, buttons, defaultButton)
+
 
     def question_box(parent, title, text, buttons=(QMessageBox.Yes | QMessageBox.No),
                      defaultButton=QMessageBox.NoButton):
@@ -177,10 +182,14 @@ if __name__ == "__main__":
     sys.excepthook = exception_hook
 
     try:
+        from app.resources.fonts.font_manager import font_manager
+        success = font_manager.set_app_font(app, "SamsungSharpSans-Bold")
+        if not success:
+            print("경고: 폰트 설정 실패, 기본 폰트 사용")
         # 스플래시 컨트롤러 생성 및 시작
         controller = SplashController(app)
         controller.start_application()
-    
+
     except Exception as e:
         print(f"초기화 오류: {e}")
         traceback.print_exc()

@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
                              QTableWidgetItem, QHeaderView, QLabel, QFrame)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QColor, QBrush
@@ -12,44 +12,46 @@ from app.utils.sort_line import sort_line
 """
 결과 요약 정보 표시 위젯
 """
+
+
 class SummaryWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.line_capacity_data = {}  # 라인별 생산능력 
-        self.line_utilization_data = {}  # 라인별 가동률 
+        self.line_capacity_data = {}  # 라인별 생산능력
+        self.line_utilization_data = {}  # 라인별 가동률
         self.init_ui()
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 10 ,10, 10)
+        main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
 
         # 요약 테이블
         self.summary_table = CustomTable()
         main_layout.addWidget(self.summary_table)
 
-
     """
     master 파일에서 라인별 생산능력 로드
     """
+
     def load_line_capacity_data(self):
         try:
             master_file = FilePaths.get('master_excel_file')
             if not master_file:
                 print("마스터 파일 경로를 찾을 수 없습니다.")
                 return
-            
+
             # capa_qty 시트 로드
             capa_data = load_file(master_file, sheet_name='capa_qty')
             if isinstance(capa_data, dict):
                 df_capa_qty = capa_data.get('capa_qty', pd.DataFrame())
             else:
                 df_capa_qty = capa_data
-            
+
             if df_capa_qty.empty:
                 print("capa_qty 데이터가 비어있습니다.")
                 return
-            
+
             # 라인별 전체 생산능력 계산 (라인별 합계)
             for _, row in df_capa_qty.iterrows():
                 if 'Line' in row:
@@ -61,14 +63,14 @@ class SummaryWidget(QWidget):
                                 total_capacity += row[col]
                     self.line_capacity_data[line] = total_capacity
             print(f"라인별 생산능력 로드 완료: {len(self.line_capacity_data)}개 라인")
-            
+
         except Exception as e:
             print(f"라인별 생산능력 로드 오류: {e}")
-
 
     """
     라인별 가동률 계산
     """
+
     def calculate_line_utilization(self, result_data):
         try:
             # 라인별 생산량 계산
@@ -84,25 +86,25 @@ class SummaryWidget(QWidget):
                     else:
                         self.line_utilization_data[line] = 0
                 else:
-                    # 생산능력 정보가 없으면 0으로 설정 
+                    # 생산능력 정보가 없으면 0으로 설정
                     self.line_utilization_data[line] = 0
-            
+
             print(f"라인별 가동률 계산 완료: {len(self.line_utilization_data)}개 라인")
-            
+
         except Exception as e:
             print(f"라인별 가동률 계산 오류: {e}")
-
 
     """
     결과 분석 및 테이블 업데이트
     """
+
     def run_analysis(self, result_data):
         if result_data is None or result_data.empty:
             self.clear_table()
             return
-        
+
         try:
-            # 1. 라인별 생산능력 및 가동률 
+            # 1. 라인별 생산능력 및 가동률
             self.load_line_capacity_data()
             self.calculate_line_utilization(result_data)
 
@@ -111,17 +113,42 @@ class SummaryWidget(QWidget):
 
             # 3. 상세 정보 추출
             summary_data = self.create_summary(result_data, capa_ratios)
-            
+
             # 4. 테이블 업데이트
             self.update_table(summary_data)
 
         except Exception as e:
             print(f"summary 요약 중 에러 : {e}")
 
+    """
+    제조동별 생산량 기준 정렬 순서 결정
+    """
+
+    def get_sorted_buildings(self, result_data):
+        """제조동별 생산량 기준으로 정렬된 제조동 목록 반환"""
+        try:
+            # 제조동 정보 추출 (Line 이름의 첫 글자가 제조동)
+            result_data_temp = result_data.copy()
+            result_data_temp['Building'] = result_data_temp['Line'].str[0]
+
+            # 제조동별 생산량 계산 (정렬 목적)
+            building_production = result_data_temp.groupby('Building')['Qty'].sum()
+
+            # 생산량 기준으로 제조동 정렬 (내림차순)
+            sorted_buildings = building_production.sort_values(ascending=False).index.tolist()
+
+            print(f"제조동별 생산량 정렬 순서: {sorted_buildings}")
+            return sorted_buildings
+
+        except Exception as e:
+            print(f"제조동 정렬 오류: {e}")
+            # 오류 시 기본 순서 반환
+            return ['I', 'D', 'K', 'M']
 
     """
     요약 데이터 생성
     """
+
     def create_summary(self, result_data, capa_ratios):
         # 제조동별 데이터 추출
         result_data = result_data.copy()
@@ -146,7 +173,7 @@ class SummaryWidget(QWidget):
             'Building(Portion)': 'Total',
             'Line': '-',
             'Capa': f"{total_capacity:,}" if total_capacity > 0 else '',
-            'Line_Qty': f"{total_qty:,}",  
+            'Line_Qty': f"{total_qty:,}",
             'Utilization(%)': f"{total_utilization:.1f}%" if total_utilization > 0 else '',
             'Project': '-',
             'Region': '-',
@@ -154,10 +181,11 @@ class SummaryWidget(QWidget):
             'is_total': True  # Total 행 표시용
         })
 
-        # 각 제조동별로 처리
-        buildings = ['I', 'D', 'K', 'M']
+        # *** 핵심 수정: 제조동별 생산량 기준 정렬 적용 ***
+        sorted_buildings = self.get_sorted_buildings(result_data)
 
-        for building in buildings:
+        # 정렬된 제조동 순서대로 처리
+        for building in sorted_buildings:
             building_data = result_data[result_data['Building'] == building]
 
             if building_data.empty:
@@ -173,7 +201,7 @@ class SummaryWidget(QWidget):
             for line in building_lines_in_data:
                 if line in self.line_capacity_data:
                     building_total_capacity += self.line_capacity_data[line]
-            
+
             # 제조동별 가동률 계산
             building_utilization = 0
             if building_total_capacity > 0:
@@ -181,9 +209,9 @@ class SummaryWidget(QWidget):
 
             # 제조동 별 total 행
             project_region_data.append({
-                'Building(Portion)' : f"{building}({building_ratio:.1f})",
-                'Line' : 'Total',
-                'Capa' : f"{building_total_capacity:,}" if building_total_capacity > 0 else '', 
+                'Building(Portion)': f"{building}({building_ratio:.1f})",
+                'Line': 'Total',
+                'Capa': f"{building_total_capacity:,}" if building_total_capacity > 0 else '',
                 'Line_Qty': f"{total_qty:,}",  # 라인별 총합 컬럼
                 'Utilization(%)': f"{building_utilization:.1f}%" if building_utilization > 0 else '',
                 'Project': '-',
@@ -195,12 +223,12 @@ class SummaryWidget(QWidget):
             # 라인별 상세정보
             line_data = building_data.groupby('Line').agg({
                 'Qty': 'sum',
-                'Project' : lambda x: list(x.unique()),  # 해당 라인의 모든 프로젝트
+                'Project': lambda x: list(x.unique()),  # 해당 라인의 모든 프로젝트
                 'Item': 'first'  # 지역 추출용
             }).reset_index()
 
-            # 라인 순서로 정렬
-            line_data = line_data.sort_values('Line', key=lambda x:x.map(sort_line))
+            # *** 수정: 라인 순서로 정렬 (제조동 내에서는 라인명 기준 정렬) ***
+            line_data = line_data.sort_values('Line', key=lambda x: x.map(sort_line))
 
             for _, row in line_data.iterrows():
                 line = row['Line']
@@ -211,12 +239,12 @@ class SummaryWidget(QWidget):
                 line_capacity = self.line_capacity_data.get(line, 0)
                 line_utilization = self.line_utilization_data.get(line, 0)
 
-                # 프로젝트별 세부정보 
+                # 프로젝트별 세부정보
                 for i, project in enumerate(projects):
                     project_data = building_data[
                         (building_data['Line'] == line) &
                         (building_data['Project'] == project)
-                    ]
+                        ]
 
                     if not project_data.empty:
                         project_qty = project_data['Qty'].sum()
@@ -259,19 +287,19 @@ class SummaryWidget(QWidget):
                                 'Pjt_Qty': f"{project_qty:,}",  # 프로젝트별 수량만 표시
                                 'is_total': False
                             })
-            
-        # DataFrame으로 변환 후 정렬
+
+        # DataFrame으로 변환 (정렬은 이미 위에서 처리됨)
         summary_df = pd.DataFrame(project_region_data)
 
         if summary_df.empty:
             return pd.DataFrame()
-        
+
         return summary_df
-    
 
     """
     테이블 업데이트
     """
+
     def update_table(self, summary_df):
         if summary_df.empty:
             self.clear_table()
@@ -369,14 +397,10 @@ class SummaryWidget(QWidget):
         # 첫 번째 컬럼은 조금 더 넓게
         self.summary_table.setColumnWidth(0, 150)
 
-
     """
     테이블 초기화
     """
+
     def clear_table(self):
         self.summary_table.setRowCount(0)
         self.summary_table.setColumnCount(0)
-
-
-
-

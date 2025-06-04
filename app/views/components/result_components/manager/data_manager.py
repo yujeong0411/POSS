@@ -248,7 +248,6 @@ class DataManager(QObject):
     데이터가 수정되었음을 표시하는 메서드
     """
     def mark_as_modified(self):
-        print("[DEBUG] mark_as_modified 호출됨 - 리셋 버튼 활성화")
         self.left_section.reset_button.setEnabled(True)
 
     """

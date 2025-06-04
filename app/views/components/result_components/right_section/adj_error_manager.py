@@ -68,7 +68,6 @@ class AdjErrorManager():
             # 에러 메시지가 None이면 해당 에러 제거
             if error_key in self.validation_errors:
                 del self.validation_errors[error_key]
-                print(f"[DEBUG] 에러 해결: {error_key}")
 
         # left_section에 정보 전달
         if hasattr(self.left_section, 'set_current_validation_errors'):
@@ -112,12 +111,17 @@ class AdjErrorManager():
         updated_errors = {}
         for key, value in self.validation_errors.items():
             info = value['item_info']
-            line, time, item = info.get('Line'), info.get('Time'), info.get('Item')
-            exists = any(
-                (self.left_section.data['Line'] == line) &
-                (self.left_section.data['Time'] == time) &
-                (self.left_section.data['Item'] == item)
-            )
+            item_id = info.get('_id')
+            if item_id:
+                mask = ItemKeyManager.create_mask_by_id(self.left_section.data, item_id)
+                exists = mask.any()
+            else:
+                line, time, item = info.get('Line'), info.get('Time'), info.get('Item')
+                exists = any(
+                    (self.left_section.data['Line'] == line) &
+                    (self.left_section.data['Time'] == time) &
+                    (self.left_section.data['Item'] == item)
+                )
             if exists:
                 updated_errors[key] = value
         self.validation_errors = updated_errors
@@ -208,29 +212,33 @@ class AdjErrorManager():
         if not hasattr(self, 'left_section') or not hasattr(self.left_section, 'grid_widget'):
             return
         
-        # ID가 있으면 ID로 아이템 찾기
-        if '_id' in item_info and item_info['_id']:
-            item_id = item_info['_id']
-            # 그리드에서 ID로 아이템 찾기
-            for row_containers in self.left_section.grid_widget.containers:
-                for container in row_containers:
-                    for item in container.items:
-                        if (hasattr(item, 'item_data') and item.item_data and 
-                            item.item_data.get('_id') == item_id):
-                            item.set_selected(True)
-                            return
-        else:
-            for row_containers in self.left_section.grid_widget.containers:
-                for container in row_containers:
-                    for item in container.items:
-                        if (hasattr(item, 'item_data') and item.item_data and 
-                            item.item_data.get('Line') == item_info.get('Line') and 
-                            item.item_data.get('Time') == item_info.get('Time') and 
-                            item.item_data.get('Item') == item_info.get('Item')):
+        try: 
+            # ID가 있으면 ID로 아이템 찾기
+            if '_id' in item_info and item_info['_id']:
+                item_id = item_info['_id']
+                # 그리드에서 ID로 아이템 찾기
+                for row_containers in self.left_section.grid_widget.containers:
+                    for container in row_containers:
+                        for item in container.items:
+                            if (hasattr(item, 'item_data') and item.item_data and 
+                                item.item_data.get('_id') == item_id):
+                                item.set_selected(True)
+                                return
+            else:
+                for row_containers in self.left_section.grid_widget.containers:
+                    for container in row_containers:
+                        for item in container.items:
+                            if (hasattr(item, 'item_data') and item.item_data and 
+                                item.item_data.get('Line') == item_info.get('Line') and 
+                                item.item_data.get('Time') == item_info.get('Time') and 
+                                item.item_data.get('Item') == item_info.get('Item')):
 
-                            # 에러 스타일 적용 대신 그냥 선택 상태로만 변경
-                            item.set_selected(True)
-                            return
+                                # 에러 스타일 적용 대신 그냥 선택 상태로만 변경
+                                item.set_selected(True)
+                                return
+
+        except Exception as e:
+            print(f"에러 하이라이트 실패:{e}")
 
 
     """

@@ -39,7 +39,6 @@ class AssignmentModel(QObject):
             import uuid
             # 모든 행에 고유 ID 할당
             assignment_df['_id'] = [str(uuid.uuid4()) for _ in range(len(assignment_df))]
-            print(f"[DEBUG] 전체 {len(assignment_df)}개 행에 ID 할당 완료")
 
         self._original_df = assignment_df.copy()  # 리셋 가능하게 복사
         self._df = assignment_df.copy()  # 실제 뷰로 전달되고 수정할 데이터
@@ -149,7 +148,7 @@ class AssignmentModel(QObject):
         self._df.loc[mask, 'Time'] = int(new_time)
 
         # 검증과 시그널을 한 번에 처리
-        error_msg = self._validate_item(item, new_line, new_time, item_id)
+        error_msg = self._validate_item(item, new_line, new_time, item_id, source_line=old_line, source_time=old_time)
         new_data = self._df.loc[mask].iloc[0].to_dict()
         row = self._df.loc[mask].iloc[0].to_dict()
 
@@ -157,10 +156,9 @@ class AssignmentModel(QObject):
         has_changes = self._check_for_changes()
 
         # 시그널을 한 번에 발생 (중복 방지)
-        self.validationFailed.emit(row, error_msg)
         self.dataModified.emit(has_changes)
-        # self.modelDataChanged.emit()  # 마지막에 한 번만
         self.itemMoved.emit(old_data, new_data)
+        self.validationFailed.emit(row, error_msg)
         
 
     """
@@ -181,7 +179,7 @@ class AssignmentModel(QObject):
     """
     PlanAdjustmentValidator로 검증, 오류 메시지 반환
     """
-    def _validate_item(self, item: str, line: str = None, time: int = None, item_id: str = None) -> Optional[str]:
+    def _validate_item(self, item: str, line: str = None, time: int = None, item_id: str = None, source_line: str = None, source_time: int = None) -> Optional[str]:
         try:
            # ID가 제공된 경우 ID로 찾기
             if item_id:
@@ -209,6 +207,8 @@ class AssignmentModel(QObject):
                 time, 
                 item,
                 self.get_item_qty(item, line, time, item_id),
+                source_line=source_line,  # 이동 모드 파라미터 추가
+                source_time=source_time,  # 이동 모드 파라미터 추가
                 item_id=item_id
             )
             return None if valid else message
@@ -244,7 +244,6 @@ class AssignmentModel(QObject):
             # 복사 작업인 경우 항상 새 ID 생성
             if full_data.get('_is_copy') == True:
                 new_row['_id'] = str(uuid.uuid4())
-                print(f"[DEBUG] 복사 작업 - 새 ID 생성: {new_row['_id']}")
             else:
                 # 복사가 아닌 경우 기존 ID 유지
                 new_row['_id'] = full_data['_id']

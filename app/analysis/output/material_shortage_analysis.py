@@ -45,7 +45,7 @@ class MaterialShortageAnalyzer:
     def _load_material_detail(self):
         try:
             # 결과 파일 경로 가져오기
-            result_path = FilePaths.get("result_file")
+            result_path = FilePaths.get("optimizer_file")
             
             if result_path and os.path.exists(result_path):
                 # Material Detail 시트 로드 시도

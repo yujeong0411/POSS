@@ -126,7 +126,6 @@ class CapaUtilization:
 
                     day_total_capacity += shift_capacity
                 
-                # print(f"[DEBUG] {day} 총 생산능력: {day_total_capacity}")
                 day_capacity[day] = day_total_capacity
             print(f"요일별 생산 가능량: {day_capacity}")
             

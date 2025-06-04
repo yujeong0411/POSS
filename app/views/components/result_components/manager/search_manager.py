@@ -128,8 +128,8 @@ class SearchManager(QObject):
     검색 결과 적용
     """
     def _apply_search_results(self, results, query):
-        print("=== [DEBUG] 검색 필터 적용 시작 ===")
-        print(f"→ 검색어: '{query}', 검색 결과 수: {len(results)}")
+        # print("=== [DEBUG] 검색 필터 적용 시작 ===")
+        # print(f"→ 검색어: '{query}', 검색 결과 수: {len(results)}")
 
         # 1. 모든 아이템의 검색 포커스 설정 
         for item in self.left_section.all_items:

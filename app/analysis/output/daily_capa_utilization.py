@@ -4,15 +4,15 @@ from app.models.common.file_store import FilePaths
 from app.utils.fileHandler import load_file
 from app.utils.item_key_manager import ItemKeyManager
 
+"""
+요일별 가동률 계산 함수
+Args:
+    data_df (DataFrame): 최적화 결과 데이터프레임
+    
+Returns:
+    dict: 요일별 가동률 데이터 {'Mon': 75.5, 'Tue': 82.3, ...}
+"""
 class CapaUtilization:
-    """
-    요일별 가동률 계산 함수
-    Args:
-        data_df (DataFrame): 최적화 결과 데이터프레임
-        
-    Returns:
-        dict: 요일별 가동률 데이터 {'Mon': 75.5, 'Tue': 82.3, ...}
-    """
     @staticmethod
     def analyze_utilization(data_df):
         try:
@@ -192,7 +192,9 @@ class CapaUtilization:
     @staticmethod
     def update_utilization_for_cell_move(data_df, item_data, new_data, is_initial=False):
         try:
-            """1. 입력 데이터 검증 및 정규화"""
+            """
+            1. 입력 데이터 검증 및 정규화
+            """
             def normalize_data(data):
                 normalized = data.copy()
                 if 'Time' in normalized:

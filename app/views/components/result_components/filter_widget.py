@@ -1,32 +1,33 @@
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                            QCheckBox, QScrollArea, QPushButton, QFrame,
-                            QToolButton, QMenu, QAction, QWidgetAction)
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+                             QCheckBox, QScrollArea, QPushButton, QFrame,
+                             QToolButton, QMenu, QAction, QWidgetAction)
 from PyQt5.QtCore import Qt, pyqtSignal, QPoint
 from PyQt5.QtGui import QFont, QCursor, QIcon
 from app.resources.fonts.font_manager import font_manager
 from app.models.common.screen_manager import *
 
 """필터 위젯 - 라인 및 프로젝트 선택 필터"""
+
+
 class FilterWidget(QWidget):
-    
     # 필터 변경 시그널
     filter_changed = pyqtSignal(dict)  # {필터타입: {선택된 값들}}
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.filter_states = {
-            'line': {},    # 선택된 라인 정보 저장
+            'line': {},  # 선택된 라인 정보 저장
             'project': {}  # 선택된 프로젝트 정보 저장
         }
-        
+
         # 필터 데이터
         self.filter_data = {
-            'line': [],    # 사용 가능한 라인 목록
+            'line': [],  # 사용 가능한 라인 목록
             'project': []  # 사용 가능한 프로젝트 목록
         }
-        
+
         self.init_ui()
-        
+
     def init_ui(self):
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -34,7 +35,7 @@ class FilterWidget(QWidget):
 
         bold_font = font_manager.get_just_font("SamsungSharpSans-Bold").family()
         normal_font = font_manager.get_just_font("SamsungOne-700").family()
-        
+
         # 라인 필터 버튼
         self.line_filter_btn = QToolButton(self)
         self.line_filter_btn.setText("Line")
@@ -60,7 +61,7 @@ class FilterWidget(QWidget):
 
         self.line_filter_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.line_filter_btn.setPopupMode(QToolButton.InstantPopup)
-        
+
         # 라인 필터 메뉴 생성
         self.line_filter_menu = QMenu(self.line_filter_btn)
         self.line_filter_menu.setStyleSheet(f"""
@@ -119,14 +120,14 @@ class FilterWidget(QWidget):
                 background: none;
             }}
         """)
-        
+
         # 메뉴 헤더 위젯 (Select All/Clear All 버튼)
         line_menu_header = QWidget()
         line_menu_header.setStyleSheet("background-color: transparent; border: none;")
         line_menu_header.setMinimumWidth(300)
         line_header_layout = QHBoxLayout(line_menu_header)
         line_header_layout.setContentsMargins(5, 2, 5, 5)
-        
+
         select_all_line_btn = QPushButton("Select All")
         select_all_line_btn.setStyleSheet(f"""
             QPushButton {{
@@ -145,7 +146,7 @@ class FilterWidget(QWidget):
         """)
         select_all_line_btn.setCursor(QCursor(Qt.PointingHandCursor))
         select_all_line_btn.clicked.connect(lambda: self.select_all_filters('line'))
-        
+
         clear_all_line_btn = QPushButton("Clear All")
         clear_all_line_btn.setStyleSheet(f"""
             QPushButton {{
@@ -164,25 +165,25 @@ class FilterWidget(QWidget):
         """)
         clear_all_line_btn.setCursor(QCursor(Qt.PointingHandCursor))
         clear_all_line_btn.clicked.connect(lambda: self.clear_all_filters('line'))
-        
+
         line_header_layout.addWidget(select_all_line_btn)
         line_header_layout.addWidget(clear_all_line_btn)
-        
+
         # 헤더 위젯을 액션으로 추가
         line_header_action = QWidgetAction(self.line_filter_menu)
         line_header_action.setDefaultWidget(line_menu_header)
         self.line_filter_menu.addAction(line_header_action)
-        
+
         # 구분선 추가
         self.line_filter_menu.addSeparator()
-        
+
         # 라인 체크박스 컨테이너
         self.line_checkbox_container = QWidget()
         self.line_checkbox_container.setStyleSheet("background-color: white; border: none;")
         self.line_checkbox_layout = QVBoxLayout(self.line_checkbox_container)
         self.line_checkbox_layout.setContentsMargins(5, 5, 5, 5)
         self.line_checkbox_layout.setSpacing(4)
-        
+
         # 체크박스 컨테이너를 스크롤 영역에 넣기
         line_scroll = QScrollArea()
         line_scroll.setWidgetResizable(True)
@@ -190,14 +191,14 @@ class FilterWidget(QWidget):
         line_scroll.setStyleSheet("background-color: white; border: none;")
         line_scroll.setMinimumWidth(w(300))
         line_scroll.setMaximumHeight(h(200))
-        
+
         # 스크롤 영역을 액션으로 추가
         line_scroll_action = QWidgetAction(self.line_filter_menu)
         line_scroll_action.setDefaultWidget(line_scroll)
         self.line_filter_menu.addAction(line_scroll_action)
-        
+
         self.line_filter_btn.setMenu(self.line_filter_menu)
-        
+
         # 프로젝트 필터 버튼
         self.project_filter_btn = QToolButton(self)
         self.project_filter_btn.setText("Project")
@@ -222,7 +223,7 @@ class FilterWidget(QWidget):
         """)
         self.project_filter_btn.setCursor(QCursor(Qt.PointingHandCursor))
         self.project_filter_btn.setPopupMode(QToolButton.InstantPopup)
-        
+
         # 프로젝트 필터 메뉴
         self.project_filter_menu = QMenu(self.project_filter_btn)
         self.project_filter_menu.setStyleSheet(f"""
@@ -281,14 +282,14 @@ class FilterWidget(QWidget):
                 background: none;
             }}
         """)
-        
+
         # 메뉴 헤더 위젯
         project_menu_header = QWidget()
         project_menu_header.setStyleSheet("background-color: transparent; border: none;")
         project_menu_header.setMinimumWidth(300)
         project_header_layout = QHBoxLayout(project_menu_header)
         project_header_layout.setContentsMargins(5, 2, 5, 5)
-        
+
         select_all_project_btn = QPushButton("Select All")
         select_all_project_btn.setStyleSheet(f"""
             QPushButton {{
@@ -307,7 +308,7 @@ class FilterWidget(QWidget):
         """)
         select_all_project_btn.setCursor(QCursor(Qt.PointingHandCursor))
         select_all_project_btn.clicked.connect(lambda: self.select_all_filters('project'))
-        
+
         clear_all_project_btn = QPushButton("Clear All")
         clear_all_project_btn.setStyleSheet(f"""
             QPushButton {{
@@ -326,25 +327,25 @@ class FilterWidget(QWidget):
         """)
         clear_all_project_btn.setCursor(QCursor(Qt.PointingHandCursor))
         clear_all_project_btn.clicked.connect(lambda: self.clear_all_filters('project'))
-        
+
         project_header_layout.addWidget(select_all_project_btn)
         project_header_layout.addWidget(clear_all_project_btn)
-        
+
         # 헤더 위젯을 액션으로 추가
         project_header_action = QWidgetAction(self.project_filter_menu)
         project_header_action.setDefaultWidget(project_menu_header)
         self.project_filter_menu.addAction(project_header_action)
-        
+
         # 구분선 추가
         self.project_filter_menu.addSeparator()
-        
+
         # 프로젝트 체크박스 컨테이너
         self.project_checkbox_container = QWidget()
         self.project_checkbox_container.setStyleSheet("background-color: white; border: none;")
         self.project_checkbox_layout = QVBoxLayout(self.project_checkbox_container)
         self.project_checkbox_layout.setContentsMargins(5, 5, 5, 5)
         self.project_checkbox_layout.setSpacing(4)
-        
+
         # 체크박스 컨테이너를 스크롤 영역에 넣기
         project_scroll = QScrollArea()
         project_scroll.setWidgetResizable(True)
@@ -352,18 +353,18 @@ class FilterWidget(QWidget):
         project_scroll.setStyleSheet("background-color: white; border: none;")
         project_scroll.setMaximumHeight(h(200))  # 최대 높이 제한
         project_scroll.setMinimumWidth(w(300))
-        
+
         # 스크롤 영역을 액션으로 추가
         project_scroll_action = QWidgetAction(self.project_filter_menu)
         project_scroll_action.setDefaultWidget(project_scroll)
         self.project_filter_menu.addAction(project_scroll_action)
-        
+
         self.project_filter_btn.setMenu(self.project_filter_menu)
-        
+
         # 버튼 추가
         main_layout.addWidget(self.line_filter_btn)
         main_layout.addWidget(self.project_filter_btn)
-        
+
         # 위젯 스타일
         self.setStyleSheet("""
             QWidget {
@@ -379,8 +380,9 @@ class FilterWidget(QWidget):
                 color: #1428A0;
             }
         """)
-            
+
     """필터 데이터 설정"""
+
     def set_filter_data(self, lines=None, projects=None):
         max_width = 250
 
@@ -388,12 +390,12 @@ class FilterWidget(QWidget):
             # 모든 라인을 문자열로 변환하여 저장
             self.filter_data['line'] = sorted([str(line) for line in lines])
             self.update_line_filters()
-            
+
         if projects:
             # 모든 프로젝트를 문자열로 변환하여 저장
             self.filter_data['project'] = sorted([str(project) for project in projects])
             self.update_project_filters()
-    
+
     """라인 필터 체크박스 업데이트"""
     """라인 필터 체크박스 업데이트"""
 
@@ -465,10 +467,11 @@ class FilterWidget(QWidget):
             return sorted(lines)
 
     """프로젝트 필터 체크박스 업데이트"""
+
     def update_project_filters(self):
         # 기존 체크박스 정리
         self._clear_layout(self.project_checkbox_layout)
-        
+
         # 체크박스 생성
         for project in self.filter_data['project']:
             checkbox = QCheckBox(str(project))
@@ -484,27 +487,29 @@ class FilterWidget(QWidget):
             checkbox.stateChanged.connect(
                 lambda state, proj=project: self.on_filter_changed('project', proj, state == Qt.Checked))
             self.project_checkbox_layout.addWidget(checkbox)
-        
+
         # "Project (x)" 형식으로 버튼 텍스트 업데이트
         self.project_filter_btn.setText(f"Project ({len(self.filter_data['project'])})")
-    
+
     """레이아웃 내 위젯 모두 제거"""
+
     def _clear_layout(self, layout):
         while layout.count():
             item = layout.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.deleteLater()
-    
+
     """필터 상태 변경 처리"""
+
     def on_filter_changed(self, filter_type, value, is_checked):
         # 값이 숫자인 경우에도 문자열로 처리하여 일관성 유지
         if isinstance(value, (int, float)):
             value = str(value)
-            
+
         self.filter_states[filter_type][value] = is_checked
         self.filter_changed.emit(self.filter_states.copy())
-    
+
     """특정 필터 유형의 모든 필터 선택"""
 
     def select_all_filters(self, filter_type):
@@ -546,7 +551,7 @@ class FilterWidget(QWidget):
 
         # 필터 변경 신호 한 번만 발생
         self.filter_changed.emit(self.filter_states.copy())
-    
+
     """특정 필터 유형의 모든 필터 해제"""
 
     def clear_all_filters(self, filter_type):

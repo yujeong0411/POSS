@@ -251,7 +251,7 @@ class MaintenanceTableWidget(CustomTable):
                         
                         # 2. ID로 찾지 못한 경우에만 (Line, Time, Item) 조합 키 확인 (후순위)
                         if not is_modified:
-                            current_key = ItemKeyManager.get_item_key(line_value, shift_value, item_value)
+                            current_key = ItemKeyManager.get_item_by_not_id(line_value, shift_value, item_value)
                             is_modified = current_key in modified_item_keys
                     elif item_field == 'RMC':
                         is_modified = False
@@ -358,9 +358,6 @@ class RMCMaintenanceTable(MaintenanceTableWidget):
         # modified_rmc_keys가 None이면 빈 집합으로 초기화
         if modified_rmc_keys is None:
             modified_rmc_keys = set()
-        
-        print(f"RMC 테이블 populate_data - 수정된 RMC 키: {modified_rmc_keys}")
-    
             
         df_data = df[df['Line'] != 'Total']  # Total 행만 필터링
         

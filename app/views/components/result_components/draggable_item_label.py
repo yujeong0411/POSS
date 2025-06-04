@@ -10,7 +10,9 @@ from app.models.common.screen_manager import *
 from app.resources.fonts.font_manager import font_manager
 
 
-"""드래그 가능한 아이템 라벨"""
+"""
+드래그 가능한 아이템 라벨
+"""
 class DraggableItemLabel(QFrame):
 
     # 아이템 선택 이벤트를 위한 시그널 추가
@@ -91,7 +93,9 @@ class DraggableItemLabel(QFrame):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
 
-    """내부 레이아웃 설정 - 아이템명과 수량을 분리"""
+    """
+    내부 레이아웃 설정 - 아이템명과 수량을 분리
+    """
     def setup_layout(self, text):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -128,14 +132,18 @@ class DraggableItemLabel(QFrame):
         layout.addWidget(self.item_label)
         layout.addWidget(self.qty_label)
 
-    """QLabel 호환성을 위한 text() 메서드"""
+    """
+    QLabel 호환성을 위한 text() 메서드
+    """
     def text(self):
         item_text = self.item_label.text() if hasattr(self, 'item_label') else ''
         qty_text = self.qty_label.text() if hasattr(self, 'qty_label') else ''
         return f"{item_text}  {qty_text}" if qty_text else item_text
 
+    """
+    QLabel 호환성을 위한 setText() 메서드
+    """
     def setText(self, text):
-        """QLabel 호환성을 위한 setText() 메서드"""
         # 텍스트 파싱해서 아이템명과 수량 분리
         parts = text.split()
         if len(parts) >= 2:
@@ -224,15 +232,18 @@ class DraggableItemLabel(QFrame):
         if event.button() == Qt.LeftButton:
             self.setCursor(Qt.OpenHandCursor)  # 마우스 놓을 때 커서 원래대로
 
-    """더블클릭 이벤트 처리"""
+    """
+    더블클릭 이벤트 처리
+    """
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
             # 더블클릭 이벤트 발생
             self.itemDoubleClicked.emit(self)
             event.accept()
 
-    """마우스가 위젯 위에 올라갔을 때 호출됨"""
-
+    """
+    마우스가 위젯 위에 올라갔을 때 호출됨
+    """
     def enterEvent(self, event):
         # 현재 검색 아이템이면 hover 스타일 적용하지 않음
         if hasattr(self, 'is_search_current') and self.is_search_current:
@@ -261,8 +272,9 @@ class DraggableItemLabel(QFrame):
                 self.setStyleSheet(ItemStyle.HOVER_STYLE)
         super().enterEvent(event)
 
-    """마우스가 위젯을 벗어났을 때 호출됨"""
-
+    """
+    마우스가 위젯을 벗어났을 때 호출됨
+    """
     def leaveEvent(self, event):
         # 현재 검색 아이템이면 원래 스타일 유지
         if hasattr(self, 'is_search_current') and self.is_search_current:
@@ -334,18 +346,24 @@ class DraggableItemLabel(QFrame):
         # 드래그 액션 실행
         drag.exec_(Qt.MoveAction)
 
-    """선택 상태 토글 및 스타일 적용"""
+    """
+    선택 상태 토글 및 스타일 적용
+    """
     def toggle_selected(self):
         self.is_selected = not self.is_selected
         self.update_style()
 
-    """선택 상태 직접 설정"""
+    """
+    선택 상태 직접 설정
+    """
     def set_selected(self, selected):
         if self.is_selected != selected:
             self.is_selected = selected
             self.update_style()
 
-    """사전할당 상태 설정"""
+    """
+    사전할당 상태 설정
+    """
     def set_pre_assigned_status(self, is_pre_assigned):
         self.is_pre_assigned = is_pre_assigned
         self.update_style()
@@ -354,7 +372,9 @@ class DraggableItemLabel(QFrame):
         if self.item_data is not None:
             self.setToolTip(self._create_tooltip_text())
 
-    """자재 부족 상태 설정"""
+    """
+    자재 부족 상태 설정
+    """
     def set_shortage_status(self, is_shortage, shortage_data=None):
         self.is_shortage = is_shortage
         self.shortage_data = shortage_data
@@ -370,7 +390,9 @@ class DraggableItemLabel(QFrame):
             else:
                 self.setToolTip(self.text())
 
-    """자재 부족 정보 툴팁 생성"""
+    """
+    자재 부족 정보 툴팁 생성
+    """
     def _create_shortage_tooltip(self):
         if not self.shortage_data:
             return self._create_tooltip_text()
@@ -414,7 +436,9 @@ class DraggableItemLabel(QFrame):
         tooltip += "</table>"
         return tooltip
 
-    """현재 상태에 맞게 스타일 업데이트"""
+    """
+    현재 상태에 맞게 스타일 업데이트
+    """
     def update_style(self):
         # 검색 포커스 스타일
         if self.is_search_focused:
@@ -455,7 +479,9 @@ class DraggableItemLabel(QFrame):
             else:
                 self.setStyleSheet(ItemStyle.DEFAULT_STYLE)
 
-    """아이템 데이터로부터 표시 텍스트 업데이트"""
+    """
+    템 데이터로부터 표시 텍스트 업데이트
+    """
     def update_text_from_data(self):        
         if self.item_data and 'Item' in self.item_data:
             item_info = str(self.item_data['Item'])
@@ -476,7 +502,9 @@ class DraggableItemLabel(QFrame):
             if hasattr(self, 'qty_label'):
                 self.qty_label.setText(str(qty) if qty_value > 0 else "0")
 
-    """아이템 데이터 업데이트"""
+    """
+    아이템 데이터 업데이트
+    """
     def update_item_data(self, new_data):
         if new_data:
             # 데이터 변경 전 검증 (부모 위젯을 통해 validator 찾기)
@@ -532,7 +560,9 @@ class DraggableItemLabel(QFrame):
             
         return False, "데이터가 없습니다."
     
-    """출하 실패 상태 설정"""
+    """
+    출하 실패 상태 설정
+    """
     def set_shipment_failure(self, is_failure, reason=None):
         self.is_shipment_failure = is_failure
         self.shipment_failure_reason = reason if is_failure else None
@@ -542,7 +572,9 @@ class DraggableItemLabel(QFrame):
         self.setToolTip(self._create_tooltip_text())
         
 
-    """아이템 상태별 색상 선 표시"""
+    """
+    아이템 상태별 색상 선 표시
+    """
     def paintEvent(self, event):
         # 기본 QLabel 의 paintEvent 호출
         super().paintEvent(event)
@@ -576,8 +608,10 @@ class DraggableItemLabel(QFrame):
             
             painter.end()
 
+    """
+    QLabel 호환성을 위한 setWordWrap() 메서드
+    """
     def setWordWrap(self, wrap):
-        """QLabel 호환성을 위한 setWordWrap() 메서드"""
         if hasattr(self, 'item_label'):
             self.item_label.setWordWrap(wrap)
         if hasattr(self, 'qty_label'):
@@ -586,7 +620,6 @@ class DraggableItemLabel(QFrame):
     """
     검색 포커스 설정 메서드
     """
-
     def set_search_focus(self, focused=True):
         # 상태가 동일하면 중복 처리 방지
         if hasattr(self, 'is_search_focused') and self.is_search_focused == focused:
@@ -604,7 +637,9 @@ class DraggableItemLabel(QFrame):
         else:
             self.update_style()
 
-    """ 아이템을 삭제할 때 사용할 메서드 입니다."""
+    """
+    아이템을 삭제할 때 사용
+    """
     def show_context_menu(self, position):
         context_menu = QMenu(self)
         context_menu.setStyleSheet("""
@@ -635,12 +670,15 @@ class DraggableItemLabel(QFrame):
 
         context_menu.exec_(self.mapToGlobal(position))
 
-    """ 삭제 요청 메서드"""
+    """
+    삭제 요청 메서드
+    """
     def request_delete(self):
         self.itemDeleteRequested.emit(self)
 
-    """검색 결과 중 현재 선택된 아이템 특별 스타일 적용"""
-
+    """
+    검색 결과 중 현재 선택된 아이템 특별 스타일 적용
+    """
     def set_search_selected(self, selected=False):
         if selected:
             self.setStyleSheet(ItemStyle.SEARCH_SELECTED_STYLE)
@@ -653,7 +691,6 @@ class DraggableItemLabel(QFrame):
     """
     현재 검색 결과에서 특별히 강조할 아이템 설정
     """
-
     def set_search_current(self, is_current=False):
         # 상태가 동일하면 중복 처리 방지
         if hasattr(self, 'is_search_current') and self.is_search_current == is_current:
@@ -671,7 +708,6 @@ class DraggableItemLabel(QFrame):
     """
     검색 관련 스타일 업데이트
     """
-
     def update_search_style(self):
         if hasattr(self, 'is_search_current') and self.is_search_current:
             # 현재 검색 위치 강조 스타일 (최우선)

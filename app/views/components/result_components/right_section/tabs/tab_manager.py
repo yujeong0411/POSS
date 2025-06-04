@@ -2,13 +2,13 @@ from PyQt5.QtWidgets import QPushButton, QHBoxLayout, QStackedWidget, QSizePolic
 from PyQt5.QtCore import Qt, pyqtSignal, QObject
 from PyQt5.QtGui import QCursor
 from app.resources.styles.result_style import ResultStyles
-from app.views.components.result_components.right_section.summary_tab import SummaryTab
-from app.views.components.result_components.right_section.capa_tab import CapaTab
-from app.views.components.result_components.right_section.material_tab import MaterialTab
-from app.views.components.result_components.right_section.plan_tab import PlanTab
-from app.views.components.result_components.right_section.portcapa_tab import PortCapaTab
-from app.views.components.result_components.right_section.shipment_tab import ShipmentTab
-from app.views.components.result_components.right_section.splitview_tab import SplitViewTab
+from app.views.components.result_components.right_section.tabs.summary_tab import SummaryTab
+from app.views.components.result_components.right_section.tabs.capa_tab import CapaTab
+from app.views.components.result_components.right_section.tabs.material_tab import MaterialTab
+from app.views.components.result_components.right_section.tabs.plan_tab import PlanTab
+from app.views.components.result_components.right_section.tabs.portcapa_tab import PortCapaTab
+from app.views.components.result_components.right_section.tabs.shipment_tab import ShipmentTab
+from app.views.components.result_components.right_section.tabs.splitview_tab import SplitViewTab
 from app.resources.fonts.font_manager import font_manager
 from app.models.common.screen_manager import *
 
@@ -197,31 +197,15 @@ class TabManager(QObject):
         tab_name = self.tab_names[idx]
         page = self.tab_instances.get(tab_name)
 
-        # Material 탭이 선택된 경우, 자재 부족량 분석 실행
-        if tab_name == 'Material' and page:
-            # 자재 분석기가 있으면 설정
-            if self.material_manager and hasattr(self.parent_page, 'result_data'):
-                # Material 탭의 콘텐츠 업데이트 전에 부족량 분석 실행
-                self.material_manager.analyze_material_shortage(self.parent_page.result_data)
-
         # capa 탭은 두가지 parameter 필요
         if tab_name == 'Capa' and page:
             page.update_content(getattr(self.parent_page, 'capa_ratio_data', None),
                                 getattr(self.parent_page, 'utilization_data', None))
 
-        # Shipment 탭은 result_data를 사용
-        elif tab_name == 'Shipment' and page:
-            if hasattr(self.parent_page, 'result_data') and self.parent_page.result_data is not None:
-                page.update_content(self.parent_page.result_data)
-            else:
-                print(f"Shipment 탭 전환 - result_data 없음")
-        elif page and hasattr(page, 'update_content'):
-            # parent_page에 저장된 데이터를 넘겨줍니다.
-            data = getattr(self.parent_page, f"{tab_name.lower()}_data", None)
-            page.update_content(data)
-
         # 4) 시그널 방출
         self.tab_changed.emit(tab_name, idx)
+
+        print(f"탭 전환 완료: {tab_name} - 분석 없이 표시만")
 
     
     """

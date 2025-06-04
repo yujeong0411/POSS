@@ -67,18 +67,7 @@ class ItemGridWidget(QWidget):
     - column_headers: 열 헤더 리스트
     - line_shifts: 라인별 교대 정보 (형식: {"라인명": ["주간", "야간"]})
     """
-
     def setupGrid(self, rows, columns, row_headers=None, column_headers=None, line_shifts=None):
-        """
-        그리드 초기화
-
-        매개변수:
-        - rows: 행 수
-        - columns: 열 수
-        - row_headers: 행 헤더 리스트 (형식: "Line_(교대)")
-        - column_headers: 열 헤더 리스트
-        - line_shifts: 라인별 교대 정보 (형식: {"라인명": ["주간", "야간"]})
-        """
         for i in reversed(range(self.grid_layout.count())):
             widget = self.grid_layout.itemAt(i).widget()
             if widget is not None:
@@ -114,7 +103,6 @@ class ItemGridWidget(QWidget):
             empty_header2.setFixedWidth(w(60))
             self.grid_layout.addWidget(empty_header2, 0, 1)
 
-            # 첫 행 데이터 넣는 곳?
             # 요일 넣는 곳
             for col, header in enumerate(column_headers):
                 label = QLabel(header)
@@ -126,7 +114,7 @@ class ItemGridWidget(QWidget):
                 # 데이터 열에만 확장 정책 적용
                 self.grid_layout.setColumnStretch(col + 2, 1)
 
-            # ===== 헤더 행은 크기 고정 =====
+            # 헤더 행은 크기 고정 
             self.grid_layout.setRowStretch(0, 0)
 
         # 라인별 교대 정보가 있는 경우 행 헤더 설정
@@ -459,7 +447,6 @@ class ItemGridWidget(QWidget):
     """
     def on_item_delete_requested(self, item, container):
         print(f"DEBUG: ItemGridWidget.on_item_delete_requested 호출됨")
-        print(f"DEBUG: 컨테이너에서 아이템 제거")
         if container:
             # 아이템 ID 추출
             item_id = ItemKeyManager.extract_item_id(item)
@@ -472,14 +459,15 @@ class ItemGridWidget(QWidget):
 
             # 컨테이너에서 아이템 제거
             container.remove_item(item)
+            print(f"DEBUG: 삭제 처리를 Container에 위임 완료")
 
-            print(f"DEBUG: itemRemoved 시그널 발생(item_grid)")
-            if item_id:
-                # ID가 있는 경우 ID만 전달
-                self.itemRemoved.emit(item_id)
-            else:
-                # ID가 없는 경우 아이템 객체 전달 (폴백)
-                self.itemRemoved.emit(item)
+            # print(f"DEBUG: itemRemoved 시그널 발생(item_grid)")
+            # if item_id:
+            #     # ID가 있는 경우 ID만 전달
+            #     self.itemRemoved.emit(item_id)
+            # else:
+            #     # ID가 없는 경우 아이템 객체 전달 (폴백)
+            #     self.itemRemoved.emit(item)
         else:
             print(f"DEBUG: 아이템이 속한 컨테이너를 찾을 수 없음")
 

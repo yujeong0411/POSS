@@ -6,8 +6,10 @@ from app.resources.fonts.font_manager import font_manager
 from app.models.common.screen_manager import *
 
 
+"""
+KPI 점수를 표 형태로 표시하는 위젯
+"""
 class KpiWidget(QWidget):
-    """KPI 점수를 표 형태로 표시하는 위젯"""
 
     # 점수가 업데이트되었을 때 발생하는 시그널
     score_updated = pyqtSignal(dict, dict)  # (base_scores, adjust_scores)
@@ -20,8 +22,10 @@ class KpiWidget(QWidget):
         self.kpi_labels = {}  # 점수 라벨 저장
         self.init_ui()
 
+    """
+    UI 초기화
+    """
     def init_ui(self):
-        """UI 초기화"""
         # 폰트 설정
         bold_font = font_manager.get_just_font("SamsungSharpSans-Bold").family()
         normal_font = font_manager.get_just_font("SamsungOne-700").family()
@@ -140,8 +144,10 @@ class KpiWidget(QWidget):
         # 최소 사이즈 설정
         self.setMinimumHeight(h(120))
 
+    """
+    점수 업데이트
+    """
     def update_scores(self, base_scores=None, adjust_scores=None):
-        """점수 업데이트"""
         try:
             # 기본 점수
             if base_scores:
@@ -163,8 +169,10 @@ class KpiWidget(QWidget):
             print(f"KPI 점수 업데이트 오류: {e}")
             traceback.print_exc()
 
+    """
+    기본 점수 라벨 업데이트
+    """
     def update_base_scores(self):
-        """기본 점수 라벨 업데이트"""
         for score_type, score in self.base_scores.items():
             label_key = f"Base_{score_type}"
             if label_key in self.kpi_labels:
@@ -186,8 +194,10 @@ class KpiWidget(QWidget):
                     color: {color};
                 """)
 
+    """
+    조정 점수 라벨 업데이트
+    """
     def update_adjust_scores(self):
-        """조정 점수 라벨 업데이트"""
         for score_type, adjust_score in self.adjust_scores.items():
             label_key = f"Adjust_{score_type}"
             if label_key in self.kpi_labels:
@@ -221,8 +231,10 @@ class KpiWidget(QWidget):
                     color: {color};
                 """)
 
+    """
+    조정 점수 리셋
+    """
     def reset_adjust_scores(self):
-        """조정 점수 리셋"""
         for score_type in ['Total', 'Mat', 'SOP', 'Util']:
             label_key = f"Adjust_{score_type}"
             if label_key in self.kpi_labels:
@@ -239,8 +251,10 @@ class KpiWidget(QWidget):
                     color: #555555;
                 """)
 
+    """
+    점수에 따른 색상 반환
+    """
     def _get_score_color(self, score):
-        """점수에 따른 색상 반환"""
         if score >= 90:
             return "#28a745"  # 초록색 (좋음)
         elif score >= 70:

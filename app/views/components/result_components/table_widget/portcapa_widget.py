@@ -26,6 +26,18 @@ class PortCapaWidget(QWidget):
         self.main_layout.addWidget(self.chart_container)
         self.main_layout.addWidget(self.table)
 
+    """
+    다른 위젯들과 패턴 통일: run_analysis 메서드 추가
+    """
+    def run_analysis(self, df):
+        """
+        결과 데이터로 PortCapa 분석 실행
+        기존 render_table() 로직을 그대로 사용
+        """
+        print(f"PortCapaWidget: run_analysis 시작 - 데이터 행 수: {len(df) if df is not None else 0}")
+        
+        # 기존 render_table() 메서드 호출
+        self.render_table()
 
     """port capa 테이블 그리는 함수"""
     def render_table(self):

@@ -36,17 +36,6 @@ class MaterialTab(QWidget):
             self.parent_page.on_material_shortage_updated(shortage_results)
     
     """
-    콘텐츠 업데이트
-    """
-    def update_content(self, data=None):
-        if data is not None and self.material_widget:
-            self.material_widget.run_analysis(data)
-            
-            # 분석 결과를 부모 페이지에도 전달 (호환성)
-            if hasattr(self.parent_page, 'material_analyzer'):
-                self.parent_page.material_analyzer = self.material_widget.get_material_analyzer()
-    
-    """
     테이블 반환
     """
     def get_table(self):

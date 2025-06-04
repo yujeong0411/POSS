@@ -29,11 +29,7 @@ class ShipmentTab(QWidget):
         """출하 상태 업데이트 시 부모에게 전달"""
         if hasattr(self.parent_page, 'on_shipment_status_updated'):
             self.parent_page.on_shipment_status_updated(failure_items)
-    
-    def update_content(self, data=None):
-        """콘텐츠 업데이트"""
-        if self.shipment_widget and data is not None:
-            self.shipment_widget.run_analysis(data)
+
     
     def get_widget(self):
         """위젯 반환"""

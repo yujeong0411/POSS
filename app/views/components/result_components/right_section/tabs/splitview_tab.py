@@ -23,12 +23,7 @@ class SplitViewTab(QWidget):
         # 부모의 split_allocation_widget 속성 설정 (호환성)
         if hasattr(self.parent_page, 'split_allocation_widget'):
             self.parent_page.split_allocation_widget = self.split_allocation_widget
-    
-    def update_content(self, data=None):
-        """콘텐츠 업데이트"""
-        if self.split_allocation_widget and data is not None:
-            self.split_allocation_widget.run_analysis(data)
-    
+
     def get_widget(self):
         """위젯 반환"""
         return self.split_allocation_widget

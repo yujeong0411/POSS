@@ -5,7 +5,9 @@ from PyQt5.QtGui import QFont, QColor
 from app.resources.fonts.font_manager import font_manager
 from app.models.common.screen_manager import *
 
-"""범례 및 필터 위젯"""
+"""
+범례 및 필터 위젯
+"""
 class LegendWidget(QWidget):
 
     # 클래스 변수로 색상 미리 정의
@@ -19,22 +21,6 @@ class LegendWidget(QWidget):
     # 특정 필터 활성화 요청 시그널 추가
     filter_activation_requested = pyqtSignal(str)  # status_type
 
-    """필터 변경 시 호출"""
-    def on_filter_changed(self, status_type, is_checked):
-        # 이전 상태와 동일하면 불필요한 처리 방지
-        if self.filter_states.get(status_type) == is_checked:
-            return
-        
-        # 상태 업데이트
-        self.filter_states[status_type] = is_checked
-        
-        # 필터 변경 신호 발생
-        self.filter_changed.emit(self.filter_states.copy())
-        
-        # 필터가 활성화되면 해당 상태 분석 요청 
-        if is_checked:
-            self.filter_activation_requested.emit(status_type)
-
     def __init__(self, parent=None):
         super().__init__(parent)
         font = font_manager.get_just_font("SamsungOne-700").family()
@@ -46,14 +32,14 @@ class LegendWidget(QWidget):
             }}
         """)
         
-        self.init_ui()
-
         # 필터 상태 추적
         self.filter_states = {
             'shortage': True,      # 자재부족은 기본 체크 
             'shipment': False,      # 출하실패  
             'pre_assigned': False   # 사전할당
         }
+
+        self.init_ui()
 
     def init_ui(self):
         main_layout = QHBoxLayout(self)
@@ -78,12 +64,34 @@ class LegendWidget(QWidget):
         """)
 
     """
+    필터 변경 시 호출
+    """
+    def on_filter_changed(self, status_type, is_checked):
+        # 이전 상태와 동일하면 불필요한 처리 방지
+        if self.filter_states.get(status_type) == is_checked:
+            print(f"[LegendWidget] 상태 동일함, 스킵")
+            return
+        
+        # 상태 업데이트
+        self.filter_states[status_type] = is_checked
+        print(f"[LegendWidget] 업데이트된 필터 상태: {self.filter_states}")
+        
+        # 필터 변경 신호 발생
+        self.filter_changed.emit(self.filter_states.copy())
+        
+        # 필터가 활성화되면 해당 상태 분석 요청 
+        if is_checked:
+            print(f"[LegendWidget] 필터 활성화 요청: {status_type}")
+            self.filter_activation_requested.emit(status_type)
+
+    """
     필터 상태 직접 설정 (UI도 함께 업데이트)
     """
     def set_filter_states(self, filter_states):
         if not filter_states:
             return
             
+        print(f"[LegendWidget] 필터 상태 직접 설정: {filter_states}")
         # 상태 업데이트
         self.filter_states = filter_states.copy()
         
@@ -92,9 +100,15 @@ class LegendWidget(QWidget):
             if status_type in filter_states:
                 is_checked = filter_states[status_type]
                 if checkbox.isChecked() != is_checked:
+                    # 시그널 일시 차단
+                    checkbox.blockSignals(True)
                     checkbox.setChecked(is_checked)
+                    checkbox.blockSignals(False)
+                    print(f"[LegendWidget] 체크박스 업데이트: {status_type} = {is_checked}")
         
-    """개별 범례 항목 생성"""
+    """
+    개별 범례 항목 생성
+    """
     def create_legend_item(self, layout, label_text, color, status_type):
         item_frame = QFrame()
         item_layout = QHBoxLayout(item_frame)
@@ -106,6 +120,7 @@ class LegendWidget(QWidget):
         checkbox.setChecked(True if status_type == 'shortage' else False)  # 기본값(자재부족) 
         checkbox.stateChanged.connect(lambda state, st=status_type: 
                                     self.on_filter_changed(st, state == Qt.Checked))
+        
         # 체크박스 참조 저장
         self.checkbox_map[status_type] = checkbox
         item_layout.addWidget(checkbox)
@@ -125,18 +140,10 @@ class LegendWidget(QWidget):
         item_layout.addWidget(label)
         layout.addWidget(item_frame)
 
-    """필터 상태 재설정 (강제 업데이트)"""
+    """
+    필터 상태 재설정 (강제 업데이트)
+    """
     def refresh_filters(self):
-        # 현재 상태 백업
-        current_states = self.filter_states.copy()
-        
-        # 모든 체크박스 강제 업데이트
-        for status_type, checkbox in self.checkbox_map.items():
-            is_checked = current_states.get(status_type, False)
-            
-            # 체크 상태가 이미 맞으면 변경하지 않음
-            if checkbox.isChecked() == is_checked:
-                continue
-                
-            # 상태가 다르면 체크박스 상태 변경 (강제로 이벤트 발생)
-            checkbox.setChecked(is_checked)
+        print(f"[LegendWidget] 필터 새로고침: {self.filter_states}")
+        # 현재 상태로 시그널 발생
+        self.filter_changed.emit(self.filter_states.copy())

@@ -27,6 +27,7 @@ from app.resources.fonts.font_manager import font_manager
 from app.analysis.output.kpi_score import KpiScore
 from app.views.components.common.enhanced_message_box import EnhancedMessageBox
 from app.models.common.settings_store import SettingsStore
+from app.models.common.file_store import FilePaths
 
 
 class ResultPage(QWidget):
@@ -687,6 +688,8 @@ class ResultPage(QWidget):
                     result_data['Qty'] = pd.to_numeric(result_data['Qty'], errors='coerce').fillna(0).astype(int)
             except Exception as e:
                 print(f"[WARNING] 데이터 타입 변환 중 오류: {e}")
+
+            FilePaths.set("optimizer_file", file_path)
             
             # MVC 구조 초기화
             print("[INFO] MVC 구조 초기화 시작")
@@ -701,8 +704,6 @@ class ResultPage(QWidget):
                 pre_assigned_mask = result_data['Type'] == 'Pre-assigned'
                 if pre_assigned_mask.any():
                     pre_assigned_items = set(result_data.loc[pre_assigned_mask, 'Item'].unique())
-                    print(f"[INFO] {len(pre_assigned_items)}개 사전할당 아이템 발견")
-                    print(f"[DEBUG] 사전할당 아이템들: {list(pre_assigned_items)[:10]}...")
             
             # 3. 모델(Model) 생성
             model = AssignmentModel(result_data, list(pre_assigned_items), validator)
@@ -758,6 +759,7 @@ class ResultPage(QWidget):
                 self.on_data_changed(result_data)
             
             print("[INFO] 파일 로드 및 MVC 초기화 완료")
+
             return True
             
         except Exception as e:
@@ -894,8 +896,6 @@ class ResultPage(QWidget):
             capa_tab.update_content(self.capa_ratio_data, self.utilization_data)
         else:
             print("[디버그] Capa 탭을 찾을 수 없음")
-
-        print("시각화 업데이트 완료")
 
 
     """
@@ -1090,7 +1090,6 @@ class ResultPage(QWidget):
         if '_id' in item_info and item_info['_id']:
             # ID로 아이템 찾기
             target_id = item_info['_id']
-            print(f"[DEBUG] ID로 에러 아이템 검색: {target_id}")
             
             for row_idx, row_containers in enumerate(self.left_section.grid_widget.containers):
                 for col_idx, container in enumerate(row_containers):
@@ -1098,7 +1097,6 @@ class ResultPage(QWidget):
                         if (hasattr(item, 'item_data') and item.item_data and 
                             item.item_data.get('_id') == target_id):
                             found_item = item
-                            print(f"ID로 아이템 발견: 행{row_idx}, 열{col_idx}")
                             break
                     if found_item:
                         break
@@ -1107,7 +1105,6 @@ class ResultPage(QWidget):
 
         # ID로 찾지 못한 경우 기존 방식으로 찾기
         if not found_item:
-            print("[DEBUG] ID로 찾지 못함, Line-Time-Item으로 검색")
             target_line = str(item_info.get('Line', ''))
             target_time = str(item_info.get('Time', ''))
             target_item = str(item_info.get('Item', ''))
@@ -1124,7 +1121,6 @@ class ResultPage(QWidget):
                                 current_time == target_time and 
                                 current_item == target_item):
                                 found_item = item
-                                print(f"아이템 발견: 행{row_idx}, 열{col_idx}")
                                 break
                         if found_item:
                             break
@@ -1199,8 +1195,6 @@ class ResultPage(QWidget):
         
         # 스크롤 위치 조정
         v_scrollbar.setValue(target_y)
-        
-        print(f"스크롤 완료 - 아이템 Y: {item_y}, 타겟 Y: {target_y}")
     
 
     """

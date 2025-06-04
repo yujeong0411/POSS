@@ -10,6 +10,7 @@ class FilePaths:
         "etc_excel_file": None,
         "output_file": None,
         "result_file": None,
+        "optimizer_file" : None
     }
 
     # 파일 경로 조회

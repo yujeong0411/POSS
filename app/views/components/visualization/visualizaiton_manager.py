@@ -29,7 +29,6 @@ class VisualizationManager:
 
         # 비교 차트 처리
         if chart_type == 'comparison_bar':
-            print("비교 차트 함수 호출됨")
             return VisualizationManager.create_comparison_bar_chart(data, title, xlabel, ylabel, ax, **kwargs)
 
         # 시각화에 필요한 형식으로 데이터 변환

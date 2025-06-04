@@ -350,7 +350,6 @@ class AdjustmentController(QObject):
             
             # 3. 모든 차트 업데이트
             self.result_page.update_all_visualizations()
-            print("모든 차트 업데이트")
         
         # 4. 자재부족/출하실패 상태를 아이템에 적용
         self._apply_status_to_items(analysis_results)
@@ -400,7 +399,7 @@ class AdjustmentController(QObject):
         # 뷰의 _scroll_to_selected_item 메서드 호출
         if hasattr(self.view, '_scroll_to_selected_item'):
             self.view._scroll_to_selected_item(item_id)
-            print(f"아이템으로 스크롤 요청: ID={item_id}")
+
 
     """
     라인과 시간으로 컨테이너 위치 찾기

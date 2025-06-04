@@ -340,19 +340,18 @@ class ModifiedLeftSection(QWidget):
     - 매니저 위임
     """
     def apply_all_filters(self):
-        print("=== [DEBUG] apply_all_filters 호출 ===")
         excel_filter_active = (
         any(self.current_excel_filter_states.get('line', {}).values()) or 
         any(self.current_excel_filter_states.get('project', {}).values())
         )
         
         if excel_filter_active:
-            print("→ Step 1: 엑셀 필터 적용 (그리드 재구성)")
+            # print("→ Step 1: 엑셀 필터 적용 (그리드 재구성)")
             self.filter_manager.apply_filters(self.current_excel_filter_states)
         else:
             print("→ Step 1: 엑셀 필터 비활성화, 그리드 재구성 스킵")
 
-        print("→ Step 2: 범례 필터 적용")
+        # print("→ Step 2: 범례 필터 적용")
         self.filter_manager._apply_legend_filters_only()
 
         # 검색이 활성화된 경우 검색 재적용
@@ -362,7 +361,6 @@ class ModifiedLeftSection(QWidget):
             if search_text:
                 # SearchManager 사용
                 self.search_manager.search_items(search_text)
-        print("=== [DEBUG] 전체 필터 적용 종료 ===")
 
     """
     활성화된 라인과 프로젝트로 그리드 재구성
@@ -455,9 +453,7 @@ class ModifiedLeftSection(QWidget):
             # *** 프로젝트 목록 추출 개선 ***
             projects = []
             if 'Project' in self.data.columns:
-                print("DEBUG: Project 컬럼 발견")
                 unique_projects = self.data['Project'].unique()
-                print(f"DEBUG: 고유 프로젝트 값들: {unique_projects}")
 
                 for project in unique_projects:
                     if pd.isna(project):
@@ -466,13 +462,11 @@ class ModifiedLeftSection(QWidget):
                         projects.append(str(project))
 
                 projects = sorted(set(projects))  # 중복 제거하고 정렬
-                print(f"DEBUG: 최종 프로젝트 목록: {projects}")
             else:
                 print("DEBUG: Project 컬럼이 데이터에 없습니다")
 
             # 필터 위젯에 데이터 설정
             self.filter_widget.set_filter_data(lines, projects)
-            print(f"DEBUG: 필터 데이터 설정 완료 - 라인: {len(lines)}개, 프로젝트: {len(projects)}개")
 
         except Exception as e:
             print(f"필터 데이터 업데이트 중 오류: {e}")
@@ -706,8 +700,6 @@ class ModifiedLeftSection(QWidget):
             new_item.show_shortage_line = self.current_filter_states.get('shortage', False)
             new_item.show_shipment_line = self.current_filter_states.get('shipment', False)
             new_item.show_pre_assigned_line = self.current_filter_states.get('pre_assigned', False)
-            
-            print(f"[DEBUG] 현재 필터 상태로 상태선 설정: {self.current_filter_states}")
         
         # 사전할당 상태
         if item_code in self.pre_assigned_items:
@@ -932,20 +924,15 @@ class ModifiedLeftSection(QWidget):
                 projects = [str(project) if not pd.isna(project) else "N/A" for project in self.data['Project']]
                 projects = sorted(set(projects))
 
-            # 디버그 출력
-            print(f"DEBUG: 그리드에서 정렬된 라인 순서: {lines}")
-
             # 필터 위젯에 정렬된 라인 순서 직접 설정 - 강제로 호출
             if hasattr(self, 'filter_widget') and self.filter_widget:
                 self.filter_widget.set_filter_data(lines, projects)
-                print("DEBUG: 필터 위젯 데이터 설정 완료")
             else:
                 print("DEBUG: 필터 위젯이 없습니다!")
 
             # 추가로 직접 호출도 해보기
             try:
                 self.update_filter_data()
-                print("DEBUG: update_filter_data 직접 호출 완료")
             except Exception as e:
                 print(f"DEBUG: update_filter_data 호출 중 오류: {e}")
 
@@ -960,7 +947,6 @@ class ModifiedLeftSection(QWidget):
                     'shipment': False,
                     'pre_assigned': False
                 }
-                print(f"[DEBUG] 기본 필터 상태 설정: {self.current_filter_states}")
             
             shortage_show = self.current_filter_states.get('shortage', True)  # 기본값 True
             shipment_show = self.current_filter_states.get('shipment', False)
@@ -975,8 +961,6 @@ class ModifiedLeftSection(QWidget):
                             item.show_shipment_line = shipment_show
                             item.show_pre_assigned_line = pre_assigned_show
                             item.update()  # 상태선 업데이트
-                            
-            print(f"[DEBUG] 상태선 적용 완료: shortage={shortage_show}, shipment={shipment_show}, pre_assigned={pre_assigned_show}")
 
         except Exception as e:
             # 에러 메시지 표시
@@ -1327,8 +1311,6 @@ class ModifiedLeftSection(QWidget):
             # ItemGridWidget의 ensure_item_visible 호출 (기존 방식)
             if hasattr(self.grid_widget, 'ensure_item_visible'):
                 self.grid_widget.ensure_item_visible(found_container, found_item)
-
-            print(f"아이템으로 스크롤 요청 완료: {item_id}")
 
     """
     직접 스크롤 위치 설정 

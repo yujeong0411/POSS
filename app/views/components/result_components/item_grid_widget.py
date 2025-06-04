@@ -424,7 +424,6 @@ class ItemGridWidget(QWidget):
 
             # 스크롤 위치 설정
             v_bar.setValue(target_y)
-            print(f"스크롤 완료 - 아이템 Y: {item_pos.y()}, 대상 Y: {target_y}")
 
         except Exception as e:
             print(f"아이템 스크롤 중 오류: {str(e)}")

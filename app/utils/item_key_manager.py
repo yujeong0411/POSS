@@ -77,8 +77,6 @@ class ItemKeyManager:
     """
     @staticmethod
     def create_mask_for_item(df: pd.DataFrame, line: Any, time: Any, item: Any) -> pd.Series:
-        print(f"[DEBUG] 마스크 생성: line={line} ({type(line).__name__}), time={time} ({type(time).__name__}), item={item} ({type(item).__name__})")
-        
         # DataFrame에 필요한 컬럼이 있는지 확인
         if not all(col in df.columns for col in ['Line', 'Time', 'Item']):
             return pd.Series(dtype=bool)
@@ -95,7 +93,6 @@ class ItemKeyManager:
             (df['Item'].astype(str) == item_str)
         )
         
-        print(f"[DEBUG] 마스크 결과: {mask.sum()}개 행 일치")
         return mask
     
     """

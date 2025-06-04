@@ -266,16 +266,19 @@ class PlanAdjustmentValidator:
         tuple: (성공 여부, 오류 메시지)
     """
     def validate_capacity(self, line, time, new_qty, item=None, is_move=False, item_id=None):
+        # 현재 데이터 갱신
         self.result_data = self.result_page.left_section.data
-
+        
+        # 현재 라인-시프트의 총 할당량 계산
         grouped_data = self.result_data.groupby(['Line', 'Time'])['Qty'].sum()
         self.line_shift_allocation = {f"{line}_{time}": qty for (line, time), qty in grouped_data.items()}
+        
         # 라인-시프트 키 생성
         key = f"{line}_{time}"
-
+        
         # 시프트의 현재 할당량 확인
         current_allocation = self.line_shift_allocation.get(key, 0)
-
+        
         # 같은 위치에서 수량만 변경인 경우 기존 할당량 제외
         existing_qty = 0
         if not is_move and item:
@@ -288,31 +291,69 @@ class PlanAdjustmentValidator:
             if mask.any():
                 existing_qty = self.result_data.loc[mask, 'Qty'].iloc[0]
                 current_allocation -= existing_qty
+            else:
+                print(f"해당 아이템을 찾을 수 없음 (수량 변경)")
         
         # 이동인 경우 해당 아이템의 기존 할당량 제외
         if is_move and item:
-             # ID가 있으면 ID로 마스크 생성, 없으면 Line/Time/Item으로 마스크 생성
+            
             if item_id:
+                # ID로 원래 위치의 아이템 찾기
                 mask = ItemKeyManager.create_mask_by_id(self.result_data, item_id)
+                if mask.any():
+                    original_row = self.result_data.loc[mask].iloc[0]
+                    original_qty = original_row['Qty']
+                    original_line = original_row['Line']
+                    original_time = original_row['Time']
+                    
+                    # 원래 위치와 목표 위치가 다른 경우
+                    if str(original_line) != str(line) or int(original_time) != int(time):
+                        print(f"다른 위치로 이동: 목표 위치의 현재 할당량에서 제외하지 않음")
+                        # 목표 위치의 할당량은 그대로 유지
+                    else:
+                        # 같은 위치 내에서의 이동 (순서 변경 등)
+                        current_allocation -= original_qty
+                        print(f"같은 위치 내 이동: 기존 수량 {original_qty} 제외, 조정된 할당량: {current_allocation}")
+                else:
+                    # ID로 찾지 못한 경우, Line/Time/Item으로 재시도
+                    print(f"Line/Time/Item으로 재시도")
+                    mask = ItemKeyManager.create_mask_for_item(self.result_data, line, time, item)
+                    print(f"Line/Time/Item 마스크 결과: {mask.sum()}개 매칭")
+                    if mask.any():
+                        existing_qty = self.result_data.loc[mask, 'Qty'].iloc[0]
+                        current_allocation -= existing_qty
+                        print(f"기존 수량 {existing_qty} 제외, 조정된 할당량: {current_allocation}")
+                    else:
+                        print(f"Line/Time/Item으로도 찾을 수 없음")
             else:
+                # ID가 없는 경우 기존 로직 (하위 호환성)
+                print(f"ID 없이 이동하는 아이템 검색")
                 mask = ItemKeyManager.create_mask_for_item(self.result_data, line, time, item)
-                
-            if mask.any():
-                current_allocation -= self.result_data.loc[mask, 'Qty'].iloc[0]
-    
+                if mask.any():
+                    existing_qty = self.result_data.loc[mask, 'Qty'].iloc[0]
+                    current_allocation -= existing_qty
+                    print(f"기존 수량 {existing_qty} 제외, 조정된 할당량: {current_allocation}")
+                else:
+                    print(f"해당 아이템을 찾을 수 없음 (이동, ID없음)")
+
         # 마스터 데이터에서 라인과 시프트 용량 가져오기
         capacity = self.get_line_capacity(line, time)
         
-        print("validate_capacity",current_allocation, new_qty, capacity)
         # 용량 검증
         if capacity is not None:  # 용량 정보가 있는 경우만 검증
             # 생산 능력이 명시적으로 0인 경우 
             if capacity <= 0:
+                print(f"❌ 용량 0: 생산 불가")
                 return False, f"No capacity: line {line}, shift {time}."
                 
             # 용량이 양수이고 할당량이 용량을 초과하는 경우
             elif current_allocation + new_qty > capacity:
-                return False, f"Over capacity({capacity}): line {line}, shift {time}."
+                print(f"❌ 용량 초과: {current_allocation + new_qty} > {capacity}")
+                return False, f"Over capacity({capacity}): line {line}, shift {time}. Current: {current_allocation}, Adding: {new_qty}, Total: {current_allocation + new_qty}"
+            else:
+                print(f"✅ 용량 내: {current_allocation + new_qty} <= {capacity}")
+        else:
+            print(f"⚠️ 용량 정보 없음: 제약 없음으로 처리")
         
         # 용량 정보가 없는 경우 (None) - 제약 없음으로 간주
         return True, ""
@@ -418,7 +459,6 @@ class PlanAdjustmentValidator:
 
         # 기존 수량 조회 (현재 위치에서)
         old_qty = self.get_item_qty_at_position(line, time, item, item_id)
-        print(f"[DEBUG] validate_adjustment: {item} at {line}-{time}, old_qty={old_qty}, new_qty={new_qty}, is_move={is_move}")
 
         # 타입 변환 (문자열 -> 숫자)
         time = convert_value(time, int, None)
@@ -475,7 +515,6 @@ class PlanAdjustmentValidator:
             # 핵심 수정: 제조동 제약을 가장 먼저 확인 (CapaUtilization과 동일하게)
             if len(line) >= 1:
                 factory = line[0]  # 라인 코드의 첫 글자 (예: 'I'_01 -> 'I')
-                print(f"[DEBUG] 제조동: {factory}")
                 
                 # 1. Max_line 제약 확인 - 최우선 체크
                 max_line_key = f'Max_line_{factory}'
@@ -483,12 +522,19 @@ class PlanAdjustmentValidator:
                 
                 if not max_line_rows.empty and time in max_line_rows.columns:
                     max_line = max_line_rows.iloc[0][time]
-                    print(f"[DEBUG] Max_line_{factory} = {max_line}")
                     
-                    # CapaUtilization과 동일: Max_line이 0이면 제조동 전체 사용 불가
-                    if pd.notna(max_line) and max_line == 0:
-                        print(f"[DEBUG] ❌ 제조동 {factory}의 Max_line이 0 → 모든 라인 사용 불가")
-                        return 0
+                    # NaN 처리 및 타입 변환
+                    if pd.notna(max_line):
+                        try:
+                            max_line = float(max_line)
+                            if max_line == 0:
+                                print(f"[DEBUG] ❌ 제조동 {factory}의 Max_line이 0 → 모든 라인 사용 불가")
+                                return 0
+                        except (ValueError, TypeError):
+                            print(f"[DEBUG] Max_line 변환 실패, 제약 무시")
+                            # 변환 실패 시 제약 없음으로 처리
+                    else:
+                        print(f"[DEBUG] Max_line이 NaN이므로 제약 없음")
                 
                 # 2. Max_qty 제약 확인 - 최우선 체크
                 max_qty_key = f'Max_qty_{factory}'
@@ -496,12 +542,19 @@ class PlanAdjustmentValidator:
                 
                 if not max_qty_rows.empty and time in max_qty_rows.columns:
                     max_qty = max_qty_rows.iloc[0][time]
-                    print(f"[DEBUG] Max_qty_{factory} = {max_qty}")
                     
-                    # CapaUtilization과 동일: Max_qty가 0이면 제조동 전체 사용 불가
-                    if pd.notna(max_qty) and max_qty == 0:
-                        print(f"[DEBUG] ❌ 제조동 {factory}의 Max_qty가 0 → 모든 라인 사용 불가")
-                        return 0
+                    # 안전한 NaN 처리 및 타입 변환
+                    if pd.notna(max_qty):
+                        try:
+                            max_qty = float(max_qty)
+                            if max_qty == 0:
+                                print(f"[DEBUG] ❌ 제조동 {factory}의 Max_qty가 0 → 모든 라인 사용 불가")
+                                return 0
+                        except (ValueError, TypeError):
+                            print(f"[DEBUG] Max_qty 변환 실패, 제약 무시")
+                            # 변환 실패 시 제약 없음으로 처리
+                    else:
+                        print(f"[DEBUG] Max_qty가 NaN이므로 제약 없음")
 
             # 개별 라인의 기본 용량 확인
             basic_capacity = None
@@ -511,7 +564,6 @@ class PlanAdjustmentValidator:
                     capacity = line_rows.iloc[0][time]
                     if pd.notna(capacity):
                         basic_capacity = float(capacity)
-                        print(f"[DEBUG] 개별 라인 기본 용량: {basic_capacity}")
 
             # 기본 용량이 없으면 None 반환
             if basic_capacity is None:
@@ -525,32 +577,45 @@ class PlanAdjustmentValidator:
                 # 3-1. Max_line 제약: 사용 가능한 라인 수 제한
                 max_line_key = f'Max_line_{factory}'
                 max_line_rows = self.capa_qty_data[self.capa_qty_data['Line'] == max_line_key]
+                
                 if not max_line_rows.empty and time in max_line_rows.columns:
                     max_line = max_line_rows.iloc[0][time]
         
-                    # 해당 제조동의 모든 라인 찾기
-                    factory_lines = self.capa_qty_data[
-                        self.capa_qty_data['Line'].str.startswith(f'{factory}_', na=False)
-                    ]
+
+                    # NaN이 아니고 유효한 경우만 라인 수 제한 적용
+                    if pd.notna(max_line):
+                        max_line_float = float(max_line)
+                        
+                        # 양수인 경우만 라인 수 제한 적용
+                        if max_line_float > 0:
+                            max_line_int = int(max_line_float)
                 
-                    # 생산능력 기준으로 라인 정렬 (내림차순)
-                    line_capacities = []
-                    for l_idx, l_row in factory_lines.iterrows():
-                        l_name = l_row['Line']
-                        if time in self.capa_qty_data.columns:
-                            capacity = self.capa_qty_data.loc[l_idx, time]
-                            if pd.notna(capacity):
-                                line_capacities.append((l_name, float(capacity)))
+                        # 해당 제조동의 모든 라인 찾기
+                        factory_lines = self.capa_qty_data[
+                            self.capa_qty_data['Line'].str.startswith(f'{factory}_', na=False)
+                        ]
                     
-                    line_capacities.sort(key=lambda x: x[1], reverse=True)
+                        # 생산능력 기준으로 라인 정렬 (내림차순)
+                        line_capacities = []
+                        for l_idx, l_row in factory_lines.iterrows():
+                            l_name = l_row['Line']
+                            if time in self.capa_qty_data.columns:
+                                capacity = self.capa_qty_data.loc[l_idx, time]
+                                if pd.notna(capacity):
+                                    line_capacities.append((l_name, float(capacity)))
+                        
+                        line_capacities.sort(key=lambda x: x[1], reverse=True)
                 
-                    # 상위 N개 라인만 사용 가능
-                    usable_lines = [l for l, _ in line_capacities[:int(max_line)]]
-                    
-                    # 현재 라인이 사용 가능한 라인 목록에 없으면 용량 0 반환
-                    if line not in usable_lines:
-                        print(f"[DEBUG] ❌ 라인 {line}이 사용 가능 목록에 없음 → 용량 0 반환")
-                        return 0
+                        # 상위 N개 라인만 사용 가능
+                        if max_line_int > 0 and len(line_capacities) > 0:
+                            # 범위를 벗어나지 않도록 안전하게 슬라이싱
+                            slice_end = min(max_line_int, len(line_capacities))
+                            usable_lines = [l for l, _ in line_capacities[:slice_end]]
+                        
+                        # 현재 라인이 사용 가능한 라인 목록에 없으면 용량 0 반환
+                        if line not in usable_lines:
+                            print(f"[DEBUG] ❌ 라인 {line}이 사용 가능 목록에 없음 → 용량 0 반환")
+                            return 0
                 
                 # 3-2. Max_qty 제약: 제조동 전체 수량 제한
                 max_qty_key = f'Max_qty_{factory}'
@@ -578,7 +643,6 @@ class PlanAdjustmentValidator:
         
             # 용량 정보를 찾지 못한 경우
             return None
-    
 
     """
     특정 제조동의 현재 생산 할당량을 계산

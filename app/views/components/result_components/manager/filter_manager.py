@@ -458,7 +458,6 @@ class FilterManager(QObject):
                         # 상태 적용
                         if item_code in self.left_section.pre_assigned_items:
                             new_item.set_pre_assigned_status(True)
-                            # print(f"[DEBUG] 사전할당 상태 복원: {item_code}")
 
                         if item_code in self.left_section.shipment_failure_items:
                             failure_info = self.left_section.shipment_failure_items[item_code]

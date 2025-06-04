@@ -466,16 +466,19 @@ class ItemsContainer(QWidget):
                                 if validator:
                                     source_line = source.item_data.get('Line') if hasattr(source, 'item_data') else None
                                     source_time = source.item_data.get('Time') if hasattr(source, 'item_data') else None
+                                    source_item_id = source.item_data.get('_id') if hasattr(source, 'item_data') else None
 
                                     valid, message = validator.validate_adjustment(
                                         line_part, new_time, item_data.get('Item', ''),
-                                        item_data.get('Qty', 0), source_line, source_time
+                                        item_data.get('Qty', 0), source_line, source_time,
+                                        item_id=source_item_id
                                     )
                                     if not valid:
                                         item_data['_validation_failed'] = True
                                         item_data['_validation_message'] = message
-                            except Exception:
-                                pass
+                                        
+                            except Exception as e:
+                                print(f"드롭 검증 에러: {e}")
 
                     # 다른 컨테이너에서 이동할 때 항상 맨 마지막에 추가
                     new_item = self.addItem(item_text, -1, item_data)  # -1로 맨 마지막에 추가
@@ -513,23 +516,6 @@ class ItemsContainer(QWidget):
                             # 선택되지 않았던 아이템은 선택하지 않음
                             new_item.set_selected(False)
 
-                        # 변경 필드 정보 생성
-                        changed_fields = {}
-                        if hasattr(source, 'item_data') and source.item_data:
-                            if ('Line' in source.item_data and 'Line' in item_data and
-                                    source.item_data.get('Line', '') != item_data.get('Line', '')):
-                                changed_fields['Line'] = {
-                                    'from': source.item_data.get('Line', ''),
-                                    'to': item_data.get('Line', '')
-                                }
-
-                            if ('Time' in source.item_data and 'Time' in item_data and
-                                    source.item_data.get('Time', '') != item_data.get('Time', '')):
-                                changed_fields['Time'] = {
-                                    'from': source.item_data.get('Time', ''),
-                                    'to': item_data.get('Time', '')
-                                }
-
                         controller = self._find_controller()
                         if controller:
                             # 변경 필드 정보 생성
@@ -548,6 +534,15 @@ class ItemsContainer(QWidget):
                                         'from': source.item_data.get('Time', ''),
                                         'to': item_data.get('Time', '')
                                     }
+
+                            # 검증 실패한 경우 에러 섹션에 표시
+                            if item_data.get('_validation_failed'):
+                                if controller and hasattr(controller, 'error_manager'):
+                                    # 드롭 완료 후 에러 표시
+                                    controller.error_manager.add_validation_error(
+                                        item_data, 
+                                        item_data.get('_validation_message', 'Validation failed')
+                                    )
 
                             # 직접 Model 조작하지 않고 Controller에 시그널로만 알림
                             if changed_fields:
